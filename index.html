@@ -260,7 +260,7 @@
       <div class="clock" id="clock">--:--<span class="sec"></span></div>
       <div class="date-line" id="dateLine"></div>
     </div>
-    <div class="weather loading" id="weather" title="Click to refresh weather">
+    <div class="weather loading" id="weather" title="Weather — click to refresh or enable location">
       <div class="w-main">…</div>
       <div class="w-sub">weather</div>
     </div>
@@ -345,11 +345,12 @@
   <label class="check-row"><input type="checkbox" id="set24h"> 24-hour clock</label>
 
   <hr>
-  <label>Weather location</label>
+  <label>Weather location <span style="font-weight:400">(auto-detected from the browser — override with a city)</span></label>
   <div class="settings-row">
     <input type="text" id="setCity" placeholder="City name…" autocomplete="off">
     <button type="button" class="btn" id="setCityBtn">Find</button>
     <button type="button" class="btn" id="setLocateBtn" title="Use my location">📍</button>
+    <button type="button" class="btn" id="setAutoBtn" title="Resume browser auto-detect">🔄</button>
   </div>
   <div id="setCityStatus" style="font-size:12px;color:var(--text-dim);margin-top:6px;"></div>
 
@@ -505,14 +506,46 @@ const WMO = c => {
   return ['🌡️', '—'];
 };
 const weatherEl = document.getElementById('weather');
+let locDenied = false; // stop retry loops after the user says no
 
-async function fetchWeather() {
-  if (!state.weatherLoc) {
-    weatherEl.querySelector('.w-main').textContent = '🌡️';
-    weatherEl.querySelector('.w-sub').textContent = 'set location in settings';
+/* Ask the browser for the visitor's location (native permission prompt),
+   reverse-geocode it to a city, then fetch weather for it. */
+function requestLocation() {
+  const main = weatherEl.querySelector('.w-main');
+  const sub = weatherEl.querySelector('.w-sub');
+  weatherEl.classList.add('loading');
+  if (!navigator.geolocation) {
+    main.textContent = '🌡️';
+    sub.textContent = 'geolocation unsupported — set a city in settings';
     weatherEl.classList.remove('loading');
     return;
   }
+  main.textContent = '📍';
+  sub.textContent = 'asking for your location…';
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    let city = 'your area';
+    try {
+      const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+      const d = await r.json();
+      city = [d.city || d.locality, d.countryName].filter(Boolean).join(', ') || city;
+    } catch {}
+    state.weatherLoc = { lat, lon, city };
+    locDenied = false;
+    save();
+    fetchWeather();
+  }, err => {
+    weatherEl.classList.remove('loading');
+    locDenied = true;
+    main.textContent = '📍';
+    sub.textContent = err && err.code === err.PERMISSION_DENIED
+      ? 'location blocked — allow in browser settings, or click to retry'
+      : 'location unavailable — click to retry';
+  }, { timeout: 15000, maximumAge: 600000 });
+}
+
+async function fetchWeather() {
+  if (!state.weatherLoc) { if (!locDenied) requestLocation(); return; }
   weatherEl.classList.add('loading');
   const { lat, lon, city } = state.weatherLoc;
   try {
@@ -530,7 +563,7 @@ async function fetchWeather() {
   }
   weatherEl.classList.remove('loading');
 }
-weatherEl.addEventListener('click', fetchWeather);
+weatherEl.addEventListener('click', () => state.weatherLoc ? fetchWeather() : requestLocation());
 setInterval(fetchWeather, 30 * 60 * 1000);
 
 /* ────────────────────────── bookmarks ────────────────────────── */
@@ -798,7 +831,9 @@ document.getElementById('openSettings').addEventListener('click', openSettings);
 function openSettings() {
   setName.value = state.name;
   set24h.checked = state.clock24;
-  setCityStatus.textContent = state.weatherLoc ? `📍 ${state.weatherLoc.city}` : '';
+  setCityStatus.textContent = state.weatherLoc
+    ? `📍 ${state.weatherLoc.city}`
+    : 'Auto-detect: browser will ask for location';
   renderSwatches();
   settingsDialog.showModal();
 }
@@ -846,6 +881,14 @@ document.getElementById('setLocateBtn').addEventListener('click', () => {
     state.weatherLoc = { lat, lon, city };
     save(); setCityStatus.textContent = '📍 ' + city; fetchWeather();
   }, () => { setCityStatus.textContent = 'Location denied — search for a city instead.'; });
+});
+
+/* resume browser auto-detect */
+document.getElementById('setAutoBtn').addEventListener('click', () => {
+  state.weatherLoc = null;
+  save();
+  settingsDialog.close();
+  requestLocation();
 });
 
 /* export / import / reset */
