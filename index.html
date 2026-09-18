@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Start</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
+<style>
+  :root {
+    --radius: 16px;
+    --card: rgba(255,255,255,.055);
+    --card-hover: rgba(255,255,255,.09);
+    --border: rgba(255,255,255,.10);
+    --text: #e8eaf0;
+    --text-dim: #9aa1b2;
+    --accent: #7aa2ff;
+    --accent-soft: rgba(122,162,255,.14);
+    --danger: #ff6b6b;
+    --shadow: 0 8px 32px rgba(0,0,0,.35);
+    --glow1: rgba(90,120,255,.16);
+    --glow2: rgba(180,90,255,.10);
+    --bg: #0b0e1a;
+  }
+  html[data-theme="graphite"] {
+    --accent: #d4a95c; --accent-soft: rgba(212,169,92,.14);
+    --glow1: rgba(212,169,92,.10); --glow2: rgba(120,120,130,.10);
+    --bg: #101014;
+  }
+  html[data-theme="forest"] {
+    --accent: #7fd6a4; --accent-soft: rgba(127,214,164,.13);
+    --glow1: rgba(60,160,110,.14); --glow2: rgba(30,120,90,.10);
+    --bg: #0a1410;
+  }
+  html[data-theme="paper"] {
+    --card: rgba(0,0,0,.045); --card-hover: rgba(0,0,0,.08);
+    --border: rgba(0,0,0,.10); --text: #23231f; --text-dim: #6d6d64;
+    --accent: #2f6f4f; --accent-soft: rgba(47,111,79,.12);
+    --glow1: rgba(47,111,79,.08); --glow2: rgba(200,160,60,.08);
+    --shadow: 0 8px 32px rgba(0,0,0,.10); --bg: #f4f2ec;
+  }
+  html[data-theme="sunset"] {
+    --accent: #ff9d6e; --accent-soft: rgba(255,157,110,.14);
+    --glow1: rgba(255,120,90,.14); --glow2: rgba(180,80,160,.12);
+    --bg: #150e18;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; justify-content: center;
+    overflow-y: auto; min-height: 100vh;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(60% 45% at 22% 8%, var(--glow1), transparent 70%),
+      radial-gradient(50% 40% at 80% 90%, var(--glow2), transparent 70%);
+  }
+  main { width: 100%; max-width: 1080px; padding: 48px 28px 80px; }
+
+  /* ── header ─────────────────────────────────────────── */
+  .top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .clock { font-size: 64px; font-weight: 200; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .clock .sec { font-size: 24px; color: var(--text-dim); font-weight: 300; }
+  .date-line { margin-top: 8px; color: var(--text-dim); font-size: 15px; }
+  .date-line .greet { color: var(--text); font-weight: 500; }
+  .weather { text-align: right; cursor: pointer; user-select: none; border-radius: var(--radius); padding: 10px 14px; transition: background .15s; }
+  .weather:hover { background: var(--card); }
+  .weather .w-main { font-size: 22px; font-weight: 500; }
+  .weather .w-sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+  .weather.loading .w-main { color: var(--text-dim); }
+
+  /* ── search ─────────────────────────────────────────── */
+  .search-wrap { margin: 34px 0 30px; }
+  .search-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 8px 6px 6px; backdrop-filter: blur(8px);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .engine-btn {
+    border: none; background: var(--accent-soft); color: var(--accent);
+    font-weight: 600; font-size: 13px; padding: 10px 16px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap; transition: filter .15s;
+  }
+  .engine-btn:hover { filter: brightness(1.15); }
+  #searchInput {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text); font-size: 17px; padding: 10px 4px; min-width: 0;
+  }
+  #searchInput::placeholder { color: var(--text-dim); }
+  .kbd {
+    font-size: 11px; color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 7px; margin-right: 8px; user-select: none;
+  }
+  .search-hint { margin-top: 10px; font-size: 12px; color: var(--text-dim); padding-left: 16px; }
+  .search-hint code { color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+
+  /* ── sections ───────────────────────────────────────── */
+  .section-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.6px;
+    color: var(--text-dim); margin: 0 4px 12px; display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* ── groups grid ────────────────────────────────────── */
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    align-items: start;
+  }
+  .group {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow);
+  }
+  .group.dragging { opacity: .35; }
+  .g-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .g-title { font-size: 14px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .g-dots {
+    width: 14px; height: 18px; cursor: grab; flex-shrink: 0;
+    background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+    background-size: 5px 5px; color: var(--text-dim); opacity: .5;
+  }
+  .g-dots:hover { opacity: 1; }
+  .icon-btn {
+    border: none; background: transparent; color: var(--text-dim); cursor: pointer;
+    font-size: 14px; width: 24px; height: 24px; border-radius: 7px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .icon-btn:hover { background: var(--card-hover); color: var(--text); }
+  .icon-btn.danger:hover { color: var(--danger); }
+  .links { display: flex; flex-direction: column; gap: 2px; min-height: 6px; }
+  .links.dragover { outline: 1px dashed var(--accent); outline-offset: 3px; border-radius: 8px; }
+  .chip {
+    display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text);
+    padding: 7px 8px; border-radius: 10px; font-size: 14px; cursor: pointer;
+    transition: background .12s;
+  }
+  .chip:hover { background: var(--card-hover); }
+  .chip.dragging { opacity: .35; }
+  .chip img { width: 17px; height: 17px; border-radius: 4px; flex-shrink: 0; }
+  .chip .fallback {
+    width: 17px; height: 17px; border-radius: 4px; flex-shrink: 0;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+  }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .del { margin-left: auto; visibility: hidden; }
+  .chip:hover .del { visibility: visible; }
+  .add-link {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; margin-top: 8px; padding: 8px; border-radius: 10px;
+    border: 1px dashed var(--border); background: transparent; color: var(--text-dim);
+    font-size: 13px; cursor: pointer; transition: color .15s, border-color .15s;
+  }
+  .add-link:hover { color: var(--accent); border-color: var(--accent); }
+  .add-group {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 90px; border: 1px dashed var(--border); border-radius: var(--radius);
+    background: transparent; color: var(--text-dim); font-size: 14px; cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .add-group:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ── todos ──────────────────────────────────────────── */
+  .todo-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow); margin-top: 26px;
+  }
+  .todo-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .todo-input-row input {
+    flex: 1; background: transparent; border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font-size: 14px; padding: 9px 12px; outline: none;
+  }
+  .todo-input-row input:focus { border-color: var(--accent); }
+  .todo-input-row button {
+    border: none; background: var(--accent-soft); color: var(--accent);
+    font-weight: 600; font-size: 13px; padding: 0 18px; border-radius: 10px; cursor: pointer;
+  }
+  .todo-input-row button:hover { filter: brightness(1.15); }
+  .todo-list { list-style: none; max-height: 240px; overflow-y: auto; }
+  .todo-list li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; font-size: 14px; }
+  .todo-list li input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+  .todo-list li .t-text { flex: 1; }
+  .todo-list li.done .t-text { text-decoration: line-through; color: var(--text-dim); }
+  .todo-list .empty { color: var(--text-dim); font-size: 13px; padding: 6px 4px; }
+  .todo-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--text-dim); padding: 0 4px; }
+  .todo-foot button { border: none; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline; }
+  .todo-foot button:hover { color: var(--danger); }
+
+  /* ── footer ─────────────────────────────────────────── */
+  footer { margin-top: 40px; text-align: center; color: var(--text-dim); font-size: 12px; }
+  footer .settings-link { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 12px; text-decoration: underline; }
+  footer .settings-link:hover { color: var(--text); }
+  footer kbd { border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 11px; margin: 0 2px; }
+
+  /* ── edit mode ──────────────────────────────────────── */
+  body.editing .chip { cursor: move; }
+  body.editing .chip .del { visibility: visible; }
+  body.editing .chip .del { pointer-events: auto; }
+  body.editing .edit-only { display: flex !important; }
+  .edit-only { display: none !important; }
+
+  /* ── dialogs ────────────────────────────────────────── */
+  dialog {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; width: min(400px, 92vw);
+    box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(3px); }
+  dialog h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  dialog label { display: block; font-size: 12px; color: var(--text-dim); margin: 12px 0 5px; }
+  dialog input[type="text"], dialog input[type="url"] {
+    width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font-size: 14px; padding: 9px 12px; outline: none;
+  }
+  dialog input:focus { border-color: var(--accent); }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .btn {
+    border: 1px solid var(--border); background: transparent; color: var(--text);
+    font-size: 13px; padding: 8px 16px; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { background: var(--card-hover); }
+  .btn.primary { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.15); }
+
+  /* settings specifics */
+  .theme-swatches { display: flex; gap: 10px; margin-top: 6px; }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
+    border: 2px solid transparent; position: relative;
+  }
+  .swatch.active { border-color: var(--accent); }
+  .swatch[data-theme="midnight"] { background: linear-gradient(135deg, #0b0e1a 50%, #7aa2ff 50%); }
+  .swatch[data-theme="graphite"] { background: linear-gradient(135deg, #101014 50%, #d4a95c 50%); }
+  .swatch[data-theme="forest"]   { background: linear-gradient(135deg, #0a1410 50%, #7fd6a4 50%); }
+  .swatch[data-theme="paper"]    { background: linear-gradient(135deg, #f4f2ec 50%, #2f6f4f 50%); }
+  .swatch[data-theme="sunset"]   { background: linear-gradient(135deg, #150e18 50%, #ff9d6e 50%); }
+  .check-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; cursor: pointer; }
+  .check-row input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .settings-row { display: flex; gap: 8px; align-items: center; }
+  .settings-row input { flex: 1; }
+  .data-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  dialog hr { border: none; border-top: 1px solid var(--border); margin: 18px 0 6px; }
+
+  @media (max-width: 640px) {
+    main { padding: 32px 16px 60px; }
+    .clock { font-size: 48px; }
+    .weather { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <div class="clock" id="clock">--:--<span class="sec"></span></div>
+      <div class="date-line" id="dateLine"></div>
+    </div>
+    <div class="weather loading" id="weather" title="Click to refresh weather">
+      <div class="w-main">…</div>
+      <div class="w-sub">weather</div>
+    </div>
+  </header>
+
+  <div class="search-wrap">
+    <form class="search-bar" id="searchForm">
+      <button type="button" class="engine-btn" id="engineBtn" title="Click to change search engine">duckduckgo</button>
+      <input id="searchInput" type="text" placeholder="Search or type a URL…" autocomplete="off" spellcheck="false">
+      <span class="kbd">/</span>
+    </form>
+    <div class="search-hint">Bangs: <code>!g</code> google · <code>!y</code> youtube · <code>!gh</code> github · <code>!w</code> wikipedia · <code>!so</code> stack overflow · <code>!r</code> reddit · <code>!a</code> amazon · <code>!mdn</code> mdn</div>
+  </div>
+
+  <div class="section-title">
+    <span>Bookmarks</span>
+    <button class="icon-btn edit-only" id="addGroupBtn" title="Add group">＋ group</button>
+  </div>
+  <div class="grid" id="groupsGrid"></div>
+
+  <div class="todo-card">
+    <div class="section-title"><span>Todos</span></div>
+    <div class="todo-input-row">
+      <input id="todoInput" type="text" placeholder="Add a todo…">
+      <button id="todoAddBtn">Add</button>
+    </div>
+    <ul class="todo-list" id="todoList"></ul>
+    <div class="todo-foot" id="todoFoot"></div>
+  </div>
+
+  <footer>
+    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
+    <button class="settings-link" id="openSettings">settings</button>
+  </footer>
+</main>
+
+<!-- add/edit link dialog -->
+<dialog id="linkDialog">
+  <h2 id="linkDialogTitle">Add link</h2>
+  <form id="linkForm">
+    <input type="hidden" id="lfGroupId"><input type="hidden" id="lfLinkId">
+    <label for="lfName">Name</label>
+    <input type="text" id="lfName" required autocomplete="off">
+    <label for="lfUrl">URL</label>
+    <input type="url" id="lfUrl" required placeholder="https://…" autocomplete="off">
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="lfCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- rename group dialog -->
+<dialog id="groupDialog">
+  <h2 id="groupDialogTitle">Add group</h2>
+  <form id="groupForm">
+    <input type="hidden" id="gfGroupId">
+    <label for="gfName">Group name</label>
+    <input type="text" id="gfName" required autocomplete="off">
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="gfCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- settings dialog -->
+<dialog id="settingsDialog">
+  <h2>Settings</h2>
+  <label for="setName">Your name (for the greeting)</label>
+  <input type="text" id="setName" placeholder="Optional" autocomplete="off">
+
+  <label>Theme</label>
+  <div class="theme-swatches" id="themeSwatches">
+    <button type="button" class="swatch" data-theme="midnight" title="Midnight"></button>
+    <button type="button" class="swatch" data-theme="graphite" title="Graphite"></button>
+    <button type="button" class="swatch" data-theme="forest" title="Forest"></button>
+    <button type="button" class="swatch" data-theme="paper" title="Paper"></button>
+    <button type="button" class="swatch" data-theme="sunset" title="Sunset"></button>
+  </div>
+
+  <label class="check-row"><input type="checkbox" id="set24h"> 24-hour clock</label>
+
+  <hr>
+  <label>Weather location</label>
+  <div class="settings-row">
+    <input type="text" id="setCity" placeholder="City name…" autocomplete="off">
+    <button type="button" class="btn" id="setCityBtn">Find</button>
+    <button type="button" class="btn" id="setLocateBtn" title="Use my location">📍</button>
+  </div>
+  <div id="setCityStatus" style="font-size:12px;color:var(--text-dim);margin-top:6px;"></div>
+
+  <hr>
+  <label>Your data</label>
+  <div class="data-actions">
+    <button type="button" class="btn" id="exportBtn">⬇ Export</button>
+    <button type="button" class="btn" id="importBtn">⬆ Import</button>
+    <button type="button" class="btn" id="resetBtn">Reset everything</button>
+  </div>
+  <input type="file" id="importFile" accept="application/json" hidden>
+
+  <div class="dialog-actions">
+    <button type="button" class="btn primary" id="settingsClose">Done</button>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+/* ────────────────────────── state ────────────────────────── */
+const LS_KEY = 'starter-page-v1';
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
+
+const DEFAULT_STATE = () => ({
+  name: '',
+  theme: 'midnight',
+  clock24: true,
+  engine: 'ddg',
+  weatherLoc: null,          // { lat, lon, city }
+  groups: [
+    { id: uid(), title: 'Daily', links: [
+      { id: uid(), name: 'Gmail',   url: 'https://mail.google.com' },
+      { id: uid(), name: 'Calendar',url: 'https://calendar.google.com' },
+      { id: uid(), name: 'GitHub',  url: 'https://github.com' },
+      { id: uid(), name: 'YouTube', url: 'https://youtube.com' },
+    ]},
+    { id: uid(), title: 'Read later', links: [
+      { id: uid(), name: 'Hacker News', url: 'https://news.ycombinator.com' },
+      { id: uid(), name: 'Lobsters',    url: 'https://lobste.rs' },
+    ]},
+  ],
+  todos: [],
+});
+
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return DEFAULT_STATE();
+    const parsed = JSON.parse(raw);
+    return Object.assign(DEFAULT_STATE(), parsed);
+  } catch { return DEFAULT_STATE(); }
+}
+let state = load();
+const save = () => localStorage.setItem(LS_KEY, JSON.stringify(state));
+
+/* ────────────────────────── search ────────────────────────── */
+const ENGINES = {
+  ddg:    { label: 'duckduckgo', url: q => 'https://duckduckgo.com/?q=' + encodeURIComponent(q) },
+  google: { label: 'google',     url: q => 'https://www.google.com/search?q=' + encodeURIComponent(q) },
+  bing:   { label: 'bing',       url: q => 'https://www.bing.com/search?q=' + encodeURIComponent(q) },
+  brave:  { label: 'brave',      url: q => 'https://search.brave.com/search?q=' + encodeURIComponent(q) },
+};
+const BANGS = {
+  g: 'google', d: 'ddg', b: 'bing',
+  y:  q => 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q),
+  gh: q => 'https://github.com/search?q=' + encodeURIComponent(q),
+  w:  q => 'https://en.wikipedia.org/w/index.php?search=' + encodeURIComponent(q),
+  so: q => 'https://stackoverflow.com/search?q=' + encodeURIComponent(q),
+  r:  q => 'https://www.reddit.com/search/?q=' + encodeURIComponent(q),
+  a:  q => 'https://www.amazon.com/s?k=' + encodeURIComponent(q),
+  mdn:q => 'https://developer.mozilla.org/en-US/search?q=' + encodeURIComponent(q),
+};
+const engineKeys = Object.keys(ENGINES);
+
+function normalizeUrl(u) {
+  u = u.trim();
+  if (!u) return null;
+  if (!/^https?:\/\//i.test(u)) {
+    if (/^[\w-]+(\.[\w-]+)+(\/.*)?$/.test(u)) u = 'https://' + u;
+    else return null;
+  }
+  try { return new URL(u).href; } catch { return null; }
+}
+
+const searchInput = document.getElementById('searchInput');
+document.getElementById('searchForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = searchInput.value.trim();
+  if (!q) return;
+  let url = null;
+  const bang = q.match(/^!(\w+)\s*(.*)$/);
+  if (bang) {
+    const [, key, rest] = bang;
+    const target = BANGS[key];
+    if (target) {
+      const defaultEngine = ENGINES[state.engine];
+      const searchUrl = typeof target === 'function' ? target(rest) : ENGINES[target].url(rest);
+      url = rest ? searchUrl : (typeof target === 'function' ? defaultEngine.url(key) : searchUrl);
+    }
+  }
+  if (!url) url = normalizeUrl(q) || ENGINES[state.engine].url(q);
+  window.open(url, '_blank', 'noopener');
+  searchInput.value = '';
+});
+
+const engineBtn = document.getElementById('engineBtn');
+function renderEngine() { engineBtn.textContent = ENGINES[state.engine].label; }
+engineBtn.addEventListener('click', () => {
+  state.engine = engineKeys[(engineKeys.indexOf(state.engine) + 1) % engineKeys.length];
+  save(); renderEngine();
+});
+renderEngine();
+
+/* ────────────────────────── clock ────────────────────────── */
+const clockEl = document.getElementById('clock');
+const dateLine = document.getElementById('dateLine');
+function greeting(h) {
+  if (h >= 5 && h < 12) return 'Good morning';
+  if (h >= 12 && h < 18) return 'Good afternoon';
+  if (h >= 18 && h < 22) return 'Good evening';
+  return 'Good night';
+}
+function tick() {
+  const now = new Date();
+  const hh = state.clock24 ? now.getHours() : ((now.getHours() % 12) || 12);
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  clockEl.innerHTML = '';
+  clockEl.append(
+    String(hh).padStart(2, '0') + ':' + mm,
+    Object.assign(document.createElement('span'), { className: 'sec', textContent: ':' + ss })
+  );
+  const name = state.name ? ', ' + state.name : '';
+  dateLine.innerHTML = '';
+  const g = document.createElement('span'); g.className = 'greet';
+  g.textContent = greeting(now.getHours()) + name + ' — ';
+  dateLine.append(g, now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
+}
+setInterval(tick, 1000);
+
+/* ────────────────────────── weather ────────────────────────── */
+const WMO = c => {
+  if (c === 0) return ['☀️', 'Clear'];
+  if (c <= 2)  return ['⛅', 'Partly cloudy'];
+  if (c === 3) return ['☁️', 'Overcast'];
+  if (c === 45 || c === 48) return ['🌫️', 'Fog'];
+  if (c >= 51 && c <= 57) return ['🌦️', 'Drizzle'];
+  if (c >= 61 && c <= 67) return ['🌧️', 'Rain'];
+  if (c >= 71 && c <= 77) return ['❄️', 'Snow'];
+  if (c >= 80 && c <= 82) return ['🌧️', 'Showers'];
+  if (c === 85 || c === 86) return ['🌨️', 'Snow showers'];
+  if (c >= 95) return ['⛈️', 'Thunderstorm'];
+  return ['🌡️', '—'];
+};
+const weatherEl = document.getElementById('weather');
+
+async function fetchWeather() {
+  if (!state.weatherLoc) {
+    weatherEl.querySelector('.w-main').textContent = '🌡️';
+    weatherEl.querySelector('.w-sub').textContent = 'set location in settings';
+    weatherEl.classList.remove('loading');
+    return;
+  }
+  weatherEl.classList.add('loading');
+  const { lat, lon, city } = state.weatherLoc;
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`;
+    const r = await fetch(u);
+    const d = await r.json();
+    const [icon, desc] = WMO(d.current.weather_code);
+    weatherEl.querySelector('.w-main').textContent =
+      `${icon} ${Math.round(d.current.temperature_2m)}°  H:${Math.round(d.daily.temperature_2m_max[0])}° L:${Math.round(d.daily.temperature_2m_min[0])}°`;
+    weatherEl.querySelector('.w-sub').textContent = `${desc} · ${city}`;
+  } catch {
+    weatherEl.querySelector('.w-main').textContent = '🌡️';
+    weatherEl.querySelector('.w-sub').textContent = 'weather unavailable';
+  }
+  weatherEl.classList.remove('loading');
+}
+weatherEl.addEventListener('click', fetchWeather);
+setInterval(fetchWeather, 30 * 60 * 1000);
+
+/* ────────────────────────── bookmarks ────────────────────────── */
+const grid = document.getElementById('groupsGrid');
+let dragPayload = null; // {type:'link'|'group', id}
+
+function faviconEl(link) {
+  const url = new URL(link.url);
+  const img = document.createElement('img');
+  img.src = `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=64`;
+  img.loading = 'lazy'; img.alt = '';
+  img.onerror = () => img.replaceWith(letterEl(link));
+  return img;
+}
+function letterEl(link) {
+  const el = document.createElement('span');
+  el.className = 'fallback';
+  el.textContent = (link.name.trim()[0] || '?');
+  return el;
+}
+
+function renderGroups() {
+  grid.innerHTML = '';
+  state.groups.forEach(g => grid.append(groupEl(g)));
+  const add = document.createElement('button');
+  add.className = 'add-group edit-only';
+  add.innerHTML = '＋ Add group';
+  add.addEventListener('click', openAddGroup);
+  grid.append(add);
+}
+
+function groupEl(group) {
+  const div = document.createElement('div');
+  div.className = 'group';
+  div.dataset.id = group.id;
+
+  const head = document.createElement('div');
+  head.className = 'g-head';
+  const handle = document.createElement('span');
+  handle.className = 'g-dots edit-only'; handle.title = 'Drag to reorder';
+  handle.draggable = true;
+  handle.addEventListener('dragstart', e => {
+    dragPayload = { type: 'group', id: group.id };
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => div.classList.add('dragging'));
+  });
+  handle.addEventListener('dragend', () => { div.classList.remove('dragging'); syncFromDOM(); });
+  const title = document.createElement('span');
+  title.className = 'g-title'; title.textContent = group.title;
+  const rename = document.createElement('button');
+  rename.className = 'icon-btn edit-only'; rename.textContent = '✎'; rename.title = 'Rename group';
+  rename.addEventListener('click', () => openEditGroup(group));
+  const del = document.createElement('button');
+  del.className = 'icon-btn danger edit-only'; del.textContent = '✕'; del.title = 'Delete group';
+  del.addEventListener('click', () => {
+    if (confirm(`Delete group "${group.title}" and its ${group.links.length} links?`)) {
+      state.groups = state.groups.filter(x => x.id !== group.id);
+      save(); renderGroups();
+    }
+  });
+  head.append(handle, title, rename, del);
+
+  const links = document.createElement('div');
+  links.className = 'links';
+  links.dataset.gid = group.id;
+  links.addEventListener('dragover', e => {
+    if (!dragPayload || dragPayload.type !== 'link') return;
+    e.preventDefault();
+    links.classList.add('dragover');
+    const after = [...links.querySelectorAll('.chip:not(.dragging)')].find(c => e.clientY < c.getBoundingClientRect().top + c.offsetHeight / 2);
+    const dragged = links.querySelector('.chip.dragging') || document.querySelector('.chip.dragging');
+    if (dragged) after ? links.insertBefore(dragged, after) : links.append(dragged);
+  });
+  links.addEventListener('dragleave', () => links.classList.remove('dragover'));
+  links.addEventListener('drop', e => { e.preventDefault(); links.classList.remove('dragover'); });
+
+  group.links.forEach(link => links.append(chipEl(group, link)));
+  div.append(head, links);
+
+  const addLink = document.createElement('button');
+  addLink.className = 'add-link edit-only';
+  addLink.innerHTML = '＋ Add link';
+  addLink.addEventListener('click', () => openAddLink(group));
+  div.append(addLink);
+  return div;
+}
+
+function chipEl(group, link) {
+  const a = document.createElement('a');
+  a.className = 'chip';
+  a.dataset.id = link.id;
+  a.href = link.url; a.target = '_blank'; a.rel = 'noopener';
+  a.title = link.url;
+  a.draggable = true;
+  a.append(faviconEl(link), Object.assign(document.createElement('span'), { textContent: link.name }));
+
+  const del = document.createElement('button');
+  del.className = 'icon-btn danger del edit-only'; del.textContent = '✕'; del.title = 'Delete link';
+  del.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    state.groups.forEach(g => { const i = g.links.findIndex(l => l.id === link.id); if (i > -1) g.links.splice(i, 1); });
+    save(); renderGroups();
+  });
+  a.append(del);
+
+  a.addEventListener('click', e => {
+    if (document.body.classList.contains('editing')) {
+      e.preventDefault();
+      openEditLink(group, link);
+    }
+  });
+  a.addEventListener('dragstart', e => {
+    dragPayload = { type: 'link', id: link.id };
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => a.classList.add('dragging'));
+  });
+  a.addEventListener('dragend', () => { a.classList.remove('dragging'); syncFromDOM(); });
+  return a;
+}
+
+/* group-level drag reordering */
+grid.addEventListener('dragover', e => {
+  if (!dragPayload || dragPayload.type !== 'group') return;
+  e.preventDefault();
+  const dragged = grid.querySelector('.group.dragging');
+  if (!dragged) return;
+  const target = [...grid.querySelectorAll('.group:not(.dragging)')]
+    .find(g => e.clientY < g.getBoundingClientRect().top + g.offsetHeight / 2);
+  target ? grid.insertBefore(dragged, target) : grid.append(dragged);
+});
+grid.addEventListener('drop', e => e.preventDefault());
+
+function syncFromDOM() {
+  const groupIds = [...grid.querySelectorAll('.group')].map(g => g.dataset.id);
+  state.groups = groupIds.map(gid => {
+    const old = state.groups.find(g => g.id === gid);
+    const linkIds = [...grid.querySelector(`.links[data-gid="${gid}"]`).querySelectorAll('.chip')]
+      .map(c => c.dataset.id);
+    const linkMap = new Map(old.links.map(l => [l.id, l]));
+    return { ...old, links: linkIds.map(id => linkMap.get(id)).filter(Boolean) };
+  });
+  save(); renderGroups();
+}
+
+/* ────────────────────────── link/group dialogs ────────────────────────── */
+const linkDialog = document.getElementById('linkDialog');
+const linkForm = document.getElementById('linkForm');
+function openAddLink(group) {
+  document.getElementById('linkDialogTitle').textContent = `Add link to "${group.title}"`;
+  document.getElementById('lfGroupId').value = group.id;
+  document.getElementById('lfLinkId').value = '';
+  document.getElementById('lfName').value = '';
+  document.getElementById('lfUrl').value = '';
+  linkDialog.showModal();
+  document.getElementById('lfName').focus();
+}
+function openEditLink(group, link) {
+  document.getElementById('linkDialogTitle').textContent = 'Edit link';
+  document.getElementById('lfGroupId').value = group.id;
+  document.getElementById('lfLinkId').value = link.id;
+  document.getElementById('lfName').value = link.name;
+  document.getElementById('lfUrl').value = link.url;
+  linkDialog.showModal();
+}
+linkForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const gid = document.getElementById('lfGroupId').value;
+  const lid = document.getElementById('lfLinkId').value;
+  const name = document.getElementById('lfName').value.trim();
+  const url = normalizeUrl(document.getElementById('lfUrl').value);
+  if (!name || !url) return;
+  const group = state.groups.find(g => g.id === gid);
+  if (lid) {
+    const link = group.links.find(l => l.id === lid);
+    link.name = name; link.url = url;
+  } else {
+    group.links.push({ id: uid(), name, url });
+  }
+  save(); linkDialog.close(); renderGroups();
+});
+document.getElementById('lfCancel').addEventListener('click', () => linkDialog.close());
+
+const groupDialog = document.getElementById('groupDialog');
+const groupForm = document.getElementById('groupForm');
+function openAddGroup() {
+  document.getElementById('groupDialogTitle').textContent = 'Add group';
+  document.getElementById('gfGroupId').value = '';
+  document.getElementById('gfName').value = '';
+  groupDialog.showModal();
+  document.getElementById('gfName').focus();
+}
+function openEditGroup(group) {
+  document.getElementById('groupDialogTitle').textContent = 'Rename group';
+  document.getElementById('gfGroupId').value = group.id;
+  document.getElementById('gfName').value = group.title;
+  groupDialog.showModal();
+}
+groupForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const gid = document.getElementById('gfGroupId').value;
+  const name = document.getElementById('gfName').value.trim();
+  if (!name) return;
+  if (gid) state.groups.find(g => g.id === gid).title = name;
+  else state.groups.push({ id: uid(), title: name, links: [] });
+  save(); groupDialog.close(); renderGroups();
+});
+document.getElementById('gfCancel').addEventListener('click', () => groupDialog.close());
+document.getElementById('addGroupBtn').addEventListener('click', openAddGroup);
+
+/* ────────────────────────── todos ────────────────────────── */
+const todoInput = document.getElementById('todoInput');
+const todoList = document.getElementById('todoList');
+const todoFoot = document.getElementById('todoFoot');
+
+function renderTodos() {
+  todoList.innerHTML = '';
+  if (!state.todos.length) {
+    const li = document.createElement('li');
+    li.className = 'empty'; li.textContent = 'Nothing yet — add something above.';
+    todoList.append(li);
+  }
+  state.todos.forEach(t => {
+    const li = document.createElement('li');
+    if (t.done) li.classList.add('done');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = t.done;
+    cb.addEventListener('change', () => { t.done = cb.checked; save(); renderTodos(); });
+    const span = document.createElement('span');
+    span.className = 't-text'; span.textContent = t.text;
+    const del = document.createElement('button');
+    del.className = 'icon-btn danger'; del.textContent = '✕';
+    del.addEventListener('click', () => { state.todos = state.todos.filter(x => x.id !== t.id); save(); renderTodos(); });
+    li.append(cb, span, del);
+    todoList.append(li);
+  });
+  const remaining = state.todos.filter(t => !t.done).length;
+  todoFoot.innerHTML = '';
+  const count = document.createElement('span');
+  count.textContent = `${remaining} open`;
+  todoFoot.append(count);
+  if (state.todos.some(t => t.done)) {
+    const clear = document.createElement('button');
+    clear.textContent = 'clear done';
+    clear.addEventListener('click', () => { state.todos = state.todos.filter(t => !t.done); save(); renderTodos(); });
+    todoFoot.append(clear);
+  }
+}
+function addTodo() {
+  const text = todoInput.value.trim();
+  if (!text) return;
+  state.todos.push({ id: uid(), text, done: false });
+  todoInput.value = ''; save(); renderTodos(); todoInput.focus();
+}
+document.getElementById('todoAddBtn').addEventListener('click', addTodo);
+todoInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+
+/* ────────────────────────── settings ────────────────────────── */
+const settingsDialog = document.getElementById('settingsDialog');
+const setName = document.getElementById('setName');
+const set24h = document.getElementById('set24h');
+const setCity = document.getElementById('setCity');
+const setCityStatus = document.getElementById('setCityStatus');
+
+document.getElementById('openSettings').addEventListener('click', openSettings);
+function openSettings() {
+  setName.value = state.name;
+  set24h.checked = state.clock24;
+  setCityStatus.textContent = state.weatherLoc ? `📍 ${state.weatherLoc.city}` : '';
+  renderSwatches();
+  settingsDialog.showModal();
+}
+document.getElementById('settingsClose').addEventListener('click', () => settingsDialog.close());
+
+setName.addEventListener('input', () => { state.name = setName.value.trim(); save(); tick(); });
+set24h.addEventListener('change', () => { state.clock24 = set24h.checked; save(); tick(); });
+
+function renderSwatches() {
+  document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === state.theme));
+}
+document.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => {
+  state.theme = s.dataset.theme;
+  document.documentElement.dataset.theme = state.theme;
+  save(); renderSwatches();
+}));
+
+/* city lookup via open-meteo geocoding (free, no key) */
+document.getElementById('setCityBtn').addEventListener('click', async () => {
+  const q = setCity.value.trim();
+  if (!q) return;
+  setCityStatus.textContent = 'Searching…';
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`);
+    const d = await r.json();
+    if (!d.results || !d.results.length) { setCityStatus.textContent = 'City not found.'; return; }
+    const c = d.results[0];
+    state.weatherLoc = { lat: c.latitude, lon: c.longitude, city: c.name + (c.country ? ', ' + c.country : '') };
+    save(); setCityStatus.textContent = '📍 ' + state.weatherLoc.city; fetchWeather();
+  } catch { setCityStatus.textContent = 'Lookup failed — check your connection.'; }
+});
+
+/* device location */
+document.getElementById('setLocateBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) { setCityStatus.textContent = 'Geolocation not supported.'; return; }
+  setCityStatus.textContent = 'Locating…';
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    let city = 'your area';
+    try {
+      const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+      const d = await r.json();
+      city = [d.city || d.locality, d.countryName].filter(Boolean).join(', ') || city;
+    } catch {}
+    state.weatherLoc = { lat, lon, city };
+    save(); setCityStatus.textContent = '📍 ' + city; fetchWeather();
+  }, () => { setCityStatus.textContent = 'Location denied — search for a city instead.'; });
+});
+
+/* export / import / reset */
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'starter-page-backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (typeof data !== 'object' || !Array.isArray(data.groups)) throw new Error('bad shape');
+      state = Object.assign(DEFAULT_STATE(), data);
+      save(); applyAll(); settingsDialog.close();
+    } catch { alert('That file doesn\'t look like a starter-page backup.'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (confirm('Reset everything to defaults? This cannot be undone.')) {
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  }
+});
+
+/* ────────────────────────── keyboard shortcuts ────────────────────────── */
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  const dialogOpen = document.querySelector('dialog[open]');
+  if (typing || dialogOpen) return;
+  if (e.key === '/') { e.preventDefault(); searchInput.focus(); }
+  else if (e.key === 'e') { document.body.classList.toggle('editing'); }
+  else if (e.key === 's') { openSettings(); }
+});
+
+/* ────────────────────────── boot ────────────────────────── */
+function applyAll() {
+  document.documentElement.dataset.theme = state.theme;
+  renderEngine(); tick(); renderGroups(); renderTodos(); fetchWeather();
+}
+applyAll();
+</script>
+</body>
+</html>
