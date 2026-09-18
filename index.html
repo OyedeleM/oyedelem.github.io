@@ -21,6 +21,13 @@
     --glow2: rgba(180,90,255,.10);
     --bg: #0b0e1a;
   }
+  /* time-of-day tint: shifts the ambient glow through the day */
+  html[data-tod="morning"]   { --glow1: rgba(255,190,110,.17); --glow2: rgba(255,140,90,.10); }
+  html[data-tod="afternoon"] { --glow1: rgba(90,160,255,.15);  --glow2: rgba(120,200,255,.09); }
+  html[data-tod="evening"]   { --glow1: rgba(150,110,255,.15); --glow2: rgba(255,110,150,.09); }
+  html[data-tod="night"]     { --glow1: rgba(70,90,160,.12);   --glow2: rgba(40,60,120,.10); }
+  html[data-theme="paper"][data-tod] { --text: #23231f; }
+
   html[data-theme="graphite"] {
     --accent: #d4a95c; --accent-soft: rgba(212,169,92,.14);
     --glow1: rgba(212,169,92,.10); --glow2: rgba(120,120,130,.10);
@@ -71,6 +78,32 @@
   .weather .w-main { font-size: 22px; font-weight: 500; }
   .weather .w-sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
   .weather.loading .w-main { color: var(--text-dim); }
+
+  /* ── forecast strip ─────────────────────────────────── */
+  .forecast { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .forecast:empty { display: none; }
+  .fcard {
+    flex: 1; min-width: 130px; display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 10px 14px; backdrop-filter: blur(8px);
+  }
+  .fcard .f-icon { font-size: 22px; }
+  .fcard .f-day { font-size: 13px; font-weight: 600; }
+  .fcard .f-desc { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+  .fcard .f-temp { margin-left: auto; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .fcard .f-temp .hi { font-weight: 600; }
+  .fcard .f-temp .lo { color: var(--text-dim); }
+  .fcard .f-pop { font-size: 11px; color: var(--accent); margin-top: 1px; }
+  .fcard.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+
+  /* rain banner */
+  .rain-banner {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 9px 14px; margin-top: 12px;
+    font-size: 13px; color: var(--text);
+  }
+  .rain-banner:empty { display: none; }
 
   /* ── search ─────────────────────────────────────────── */
   .search-wrap { margin: 34px 0 30px; }
@@ -275,6 +308,9 @@
     <div class="search-hint">Bangs: <code>!g</code> google · <code>!y</code> youtube · <code>!gh</code> github · <code>!w</code> wikipedia · <code>!so</code> stack overflow · <code>!r</code> reddit · <code>!a</code> amazon · <code>!mdn</code> mdn</div>
   </div>
 
+  <div class="forecast" id="forecast"></div>
+  <div class="rain-banner" id="rainBanner"></div>
+
   <div class="section-title">
     <span>Bookmarks</span>
     <button class="icon-btn edit-only" id="addGroupBtn" title="Add group">＋ group</button>
@@ -469,12 +505,35 @@ const clockEl = document.getElementById('clock');
 const dateLine = document.getElementById('dateLine');
 function greeting(h) {
   if (h >= 5 && h < 12) return 'Good morning';
-  if (h >= 12 && h < 18) return 'Good afternoon';
-  if (h >= 18 && h < 22) return 'Good evening';
+  if (h >= 12 && h < 17) return 'Good afternoon';
+  if (h >= 17 && h < 22) return 'Good evening';
   return 'Good night';
+}
+function timeOfDay(h) {
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 22) return 'evening';
+  return 'night';
+}
+/* weather-aware advice, derived from the last fetched conditions */
+let lastWx = null; // { code, temp }
+function wxAdvice() {
+  if (!lastWx) return '';
+  const { code, temp } = lastWx;
+  const rainy = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+  const snowy = (code >= 71 && code <= 77) || code === 85 || code === 86;
+  if (rainy) return 'Take an umbrella ☔';
+  if (snowy) return 'Bundle up — snow ❄️';
+  if (code === 45 || code === 48) return 'Low visibility — fog 🌫️';
+  if (temp >= 30) return 'Stay hydrated — it\'s hot 🥵';
+  if (temp <= 0) return 'Freezing out — dress warm 🧤';
+  if (code <= 1) return 'Clear skies ☀️';
+  if (code === 2 || code === 3) return 'Cloudy but fine ☁️';
+  return '';
 }
 function tick() {
   const now = new Date();
+  document.documentElement.dataset.tod = timeOfDay(now.getHours());
   const hh = state.clock24 ? now.getHours() : ((now.getHours() % 12) || 12);
   const mm = String(now.getMinutes()).padStart(2, '0');
   const ss = String(now.getSeconds()).padStart(2, '0');
@@ -488,6 +547,14 @@ function tick() {
   const g = document.createElement('span'); g.className = 'greet';
   g.textContent = greeting(now.getHours()) + name + ' — ';
   dateLine.append(g, now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
+  const advice = wxAdvice();
+  if (advice) {
+    const a = document.createElement('span');
+    a.className = 'wx-advice';
+    a.style.cssText = 'margin-left:10px;color:var(--accent);';
+    a.textContent = ' · ' + advice;
+    dateLine.append(a);
+  }
 }
 setInterval(tick, 1000);
 
@@ -550,18 +617,64 @@ async function fetchWeather() {
   const { lat, lon, city } = state.weatherLoc;
   try {
     const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`;
+      `&current=temperature_2m,weather_code` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+      `&forecast_days=3&timezone=auto`;
     const r = await fetch(u);
     const d = await r.json();
     const [icon, desc] = WMO(d.current.weather_code);
     weatherEl.querySelector('.w-main').textContent =
       `${icon} ${Math.round(d.current.temperature_2m)}°  H:${Math.round(d.daily.temperature_2m_max[0])}° L:${Math.round(d.daily.temperature_2m_min[0])}°`;
     weatherEl.querySelector('.w-sub').textContent = `${desc} · ${city}`;
+    lastWx = { code: d.current.weather_code, temp: d.current.temperature_2m };
+    tick(); // refresh greeting with weather advice
+    renderForecast(d.daily);
+    renderRainAlert(d.daily);
   } catch {
     weatherEl.querySelector('.w-main').textContent = '🌡️';
     weatherEl.querySelector('.w-sub').textContent = 'weather unavailable';
   }
   weatherEl.classList.remove('loading');
+}
+
+/* ── forecast strip + rain alert ── */
+const forecastEl = document.getElementById('forecast');
+const rainBanner = document.getElementById('rainBanner');
+
+function renderForecast(daily) {
+  forecastEl.innerHTML = '';
+  const days = ['Today', 'Tomorrow'];
+  for (let i = 0; i < 3; i++) {
+    const card = document.createElement('div');
+    card.className = i === 0 ? 'fcard today' : 'fcard';
+    const [icon] = WMO(daily.weather_code[i]);
+    const dayLabel = days[i] || new Date(daily.time[i] + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long' });
+    const pop = daily.precipitation_probability_max ? daily.precipitation_probability_max[i] : null;
+    const info = document.createElement('div');
+    info.innerHTML = `<div class="f-day"></div><div class="f-desc"></div>`;
+    info.querySelector('.f-day').textContent = dayLabel;
+    info.querySelector('.f-desc').textContent = WMO(daily.weather_code[i])[1];
+    const temp = document.createElement('div');
+    temp.className = 'f-temp';
+    temp.innerHTML = `<div><span class="hi"></span> <span class="lo"></span></div>` +
+      (pop !== null ? `<div class="f-pop">💧<span></span>%</div>` : '');
+    temp.querySelector('.hi').textContent = Math.round(daily.temperature_2m_max[i]) + '°';
+    temp.querySelector('.lo').textContent = Math.round(daily.temperature_2m_min[i]) + '°';
+    if (pop !== null) temp.querySelector('.f-pop span').textContent = pop;
+    card.append(Object.assign(document.createElement('span'), { className: 'f-icon', textContent: icon }), info, temp);
+    forecastEl.append(card);
+  }
+}
+
+function renderRainAlert(daily) {
+  rainBanner.innerHTML = '';
+  const pop = daily.precipitation_probability_max ? daily.precipitation_probability_max[0] : 0;
+  if (pop >= 40) {
+    const strong = pop >= 70 ? 'Rain likely today' : 'Rain possible today';
+    rainBanner.innerHTML = `☔ <strong></strong> — <span></span>% chance. Take an umbrella.`;
+    rainBanner.querySelector('strong').textContent = strong;
+    rainBanner.querySelector('span').textContent = pop;
+  }
 }
 weatherEl.addEventListener('click', () => state.weatherLoc ? fetchWeather() : requestLocation());
 setInterval(fetchWeather, 30 * 60 * 1000);
