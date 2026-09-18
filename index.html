@@ -30,17 +30,50 @@
     --bg: #0b0e1a;
   }
   /* ── celestial scene (day/night clock) ─────────────── */
-  .clockwrap { position: relative; }
-  .celestial { height: 84px; position: relative; margin-bottom: 2px; }
+  .clockwrap { position: relative; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+  .celestial { position: absolute; inset: 0; }
   .celestial svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .star { animation: twinkle 4s ease-in-out infinite; }
   @keyframes twinkle { 0%,100% { opacity: 0.9; } 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) { .star { animation: none; } }
-  .clock { color: var(--digit, var(--text)); }
-  html[data-tod="morning"]   { --digit: #ffe9d2; }
-  html[data-tod="afternoon"] { --digit: #ffffff; }
-  html[data-tod="evening"]   { --digit: #ffd9c2; }
-  html[data-tod="night"]     { --digit: #c9d6ff; }
+  .sky-content {
+    position: relative; z-index: 1; padding: 18px 22px 16px;
+    display: flex; flex-direction: column; min-height: 190px; justify-content: space-between;
+  }
+  .clock {
+    font-size: 64px; font-weight: 200; letter-spacing: -2px; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    text-shadow: 0 1px 12px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
+  }
+  .clock .sec { font-size: 24px; color: rgba(255,255,255,.75); font-weight: 300; }
+  .date-line {
+    margin-top: 8px; font-size: 15px; color: rgba(255,255,255,.92);
+    text-shadow: 0 1px 8px rgba(0,0,0,.5);
+  }
+  .date-line .greet { color: #fff; font-weight: 500; }
+  .date-line .wx-advice { color: #fff !important; opacity: .95; }
+  /* legibility scrim: dark at top where text sits, transparent below */
+  .sky-scrim {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background: linear-gradient(180deg, rgba(5,8,22,.52) 0%, rgba(5,8,22,.28) 45%, rgba(5,8,22,0) 100%);
+  }
+  html[data-theme="paper"] .sky-scrim {
+    background: linear-gradient(180deg, rgba(20,26,48,.38) 0%, rgba(20,26,48,.18) 45%, rgba(20,26,48,0) 100%);
+  }
+  /* weather chip, top-right inside the sky */
+  .weather {
+    position: absolute; top: 14px; right: 14px; z-index: 2;
+    text-align: right; cursor: pointer; user-select: none;
+    border-radius: 12px; padding: 8px 12px;
+    background: rgba(5,8,22,.30); backdrop-filter: blur(6px);
+    transition: background .15s;
+    color: #fff;
+  }
+  .weather:hover { background: rgba(5,8,22,.45); }
+  .weather .w-main { font-size: 20px; font-weight: 500; text-shadow: 0 1px 8px rgba(0,0,0,.45); }
+  .weather .w-sub { font-size: 12px; margin-top: 2px; color: rgba(255,255,255,.82); }
+  .weather.loading .w-main { opacity: .7; }
 
   /* time-of-day tint: shifts the ambient glow through the day */
   html[data-tod="morning"]   { --glow1: rgba(255,190,110,.17); --glow2: rgba(255,140,90,.10); }
@@ -94,11 +127,7 @@
   .clock .sec { font-size: 24px; color: var(--text-dim); font-weight: 300; }
   .date-line { margin-top: 8px; color: var(--text-dim); font-size: 15px; }
   .date-line .greet { color: var(--text); font-weight: 500; }
-  .weather { text-align: right; cursor: pointer; user-select: none; border-radius: var(--radius); padding: 10px 14px; transition: background .15s; }
-  .weather:hover { background: var(--card); }
-  .weather .w-main { font-size: 22px; font-weight: 500; }
-  .weather .w-sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
-  .weather.loading .w-main { color: var(--text-dim); }
+  .top { margin-bottom: 26px; }
 
   /* ── forecast strip ─────────────────────────────────── */
   .forecast { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
@@ -220,10 +249,38 @@
   .add-group:hover { color: var(--accent); border-color: var(--accent); }
 
   /* ── todos ──────────────────────────────────────────── */
+  /* ── widget cards: todos + notes side by side ───────── */
+  .widgets {
+    display: grid; gap: 14px; margin-top: 26px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    align-items: start;
+  }
   .todo-card {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow); margin-top: 26px;
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow);
   }
+  .notes-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow);
+    display: flex; flex-direction: column;
+  }
+  .notes-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .notes-saved { font-size: 11px; color: var(--text-dim); transition: opacity .3s; }
+  .notes-saved.flash { color: var(--accent); opacity: 1; }
+  #notesArea {
+    width: 100%; min-height: 180px; resize: vertical;
+    background: transparent; border: none; outline: none;
+    color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.55;
+  }
+  #notesArea::placeholder { color: var(--text-dim); }
+  .notes-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+  .notes-foot .charcount { font-variant-numeric: tabular-nums; }
+  .notes-foot button {
+    border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+    font-size: 11px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+  }
+  .notes-foot button:hover { color: var(--accent); border-color: var(--accent); }
   .todo-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
   .todo-input-row input {
     flex: 1; background: transparent; border: 1px solid var(--border); border-radius: 10px;
@@ -301,25 +358,34 @@
   dialog hr { border: none; border-top: 1px solid var(--border); margin: 18px 0 6px; }
 
   @media (max-width: 640px) {
-    main { padding: 32px 16px 60px; }
+    main { padding: 24px 14px 60px; }
     .clock { font-size: 48px; }
-    .weather { text-align: left; }
+    .sky-content { min-height: 160px; padding: 14px 16px 12px; }
+    .weather {
+      position: static; display: inline-block; margin: 12px 0 0;
+      padding: 5px 10px; font-size: 12px;
+    }
+    .weather .w-main { font-size: 15px; }
+    .weather .w-sub { font-size: 11px; }
   }
 </style>
 </head>
 <body>
 <main>
   <header class="top">
-    <div>
-      <div class="clockwrap">
-        <div class="celestial" id="celestial" aria-hidden="true"></div>
-        <div class="clock" id="clock">--:--<span class="sec"></span></div>
-        <div class="date-line" id="dateLine"></div>
+    <div class="clockwrap">
+      <div class="celestial" id="celestial" aria-hidden="true"></div>
+      <div class="sky-scrim"></div>
+      <div class="sky-content">
+        <div>
+          <div class="clock" id="clock">--:--<span class="sec"></span></div>
+          <div class="date-line" id="dateLine"></div>
+        </div>
       </div>
-    </div>
-    <div class="weather loading" id="weather" title="Weather — click to refresh or enable location">
-      <div class="w-main">…</div>
-      <div class="w-sub">weather</div>
+      <div class="weather loading" id="weather" title="Weather — click to refresh or enable location">
+        <div class="w-main">…</div>
+        <div class="w-sub">weather</div>
+      </div>
     </div>
   </header>
 
@@ -341,18 +407,29 @@
   </div>
   <div class="grid" id="groupsGrid"></div>
 
-  <div class="todo-card">
-    <div class="section-title"><span>Todos</span></div>
-    <div class="todo-input-row">
-      <input id="todoInput" type="text" placeholder="Add a todo…">
-      <button id="todoAddBtn">Add</button>
+  <div class="widgets">
+    <div class="todo-card">
+      <div class="section-title"><span>Todos</span></div>
+      <div class="todo-input-row">
+        <input id="todoInput" type="text" placeholder="Add a todo…">
+        <button id="todoAddBtn">Add</button>
+      </div>
+      <ul class="todo-list" id="todoList"></ul>
+      <div class="todo-foot" id="todoFoot"></div>
     </div>
-    <ul class="todo-list" id="todoList"></ul>
-    <div class="todo-foot" id="todoFoot"></div>
+
+    <div class="notes-card">
+      <div class="section-title"><span>Notes</span><span class="notes-saved" id="notesSaved"></span></div>
+      <textarea id="notesArea" placeholder="Jot anything — saved as you type…" spellcheck="false"></textarea>
+      <div class="notes-foot">
+        <span class="charcount" id="notesCount">0 chars</span>
+        <button id="notesExport" title="Download as a .md file">⬇ Export .md</button>
+      </div>
+    </div>
   </div>
 
   <footer>
-    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
+    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
     <button class="settings-link" id="openSettings">settings</button>
   </footer>
 </main>
@@ -553,29 +630,36 @@ function renderCelestial() {
   const wrap = document.getElementById('celestial');
   if (!wrap) return;
   const now = new Date();
-  const W = 320, H = 84, BASE = 78, APEX = 16;
+  // work in real element pixels: viewBox = element box, no aspect cropping surprises
+  const W = wrap.clientWidth || 1000;
+  const H = wrap.clientHeight || 230;
   const pal = celestialPalette(now);
   const stars = [];
   let seed = 42;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
-  for (let i = 0; i < 42; i++) stars.push({ x: rnd() * W, y: rnd() * H * 0.72, r: 0.4 + rnd() * 1.1, o: 0.35 + rnd() * 0.65, d: rnd() * 4 });
+  for (let i = 0; i < 70; i++) stars.push({ x: rnd() * W, y: rnd() * H * 0.62, r: 0.7 + rnd() * 1.5, o: 0.35 + rnd() * 0.65, d: rnd() * 4 });
   const wxDim = lastWx && ((lastWx.code >= 51 && lastWx.code <= 67) || (lastWx.code >= 80) || lastWx.code >= 95) ? 0.5 : (lastWx && lastWx.code >= 2 ? 0.8 : 1);
-  let orb = '';
+  // orb path: wide screens arc across the right half; narrow screens park it
+  // low-right, below the clock text
+  const narrow = W < 520;
+  const t = pal.t;
+  const ox = narrow ? W * 0.80 : W * (0.62 + t * 0.28);
+  const oy = narrow ? H * 0.66 + (t - 0.5) * H * 0.10 : (H - 26) - Math.sin(Math.PI * t) * (H - 96);
+  const R = pal.mode === 'day' ? Math.min(26, W * 0.055 + 12) : Math.min(20, W * 0.045 + 10);
+  let orb;
   if (pal.mode === 'day') {
-    const x = 20 + pal.t * (W - 40), y = BASE - Math.sin(Math.PI * pal.t) * (BASE - APEX);
-    orb = `<circle cx="${x}" cy="${y}" r="20" fill="url(#sunglow)" opacity="${0.55 * wxDim}"/>
-           <circle cx="${x}" cy="${y}" r="9" fill="#FFD75E" opacity="${wxDim}"/>`;
+    orb = `<circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${(R * 2.6).toFixed(1)}" fill="url(#sunglow)" opacity="${0.55 * wxDim}"/>
+           <circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="#FFD75E" opacity="${wxDim}"/>`;
   } else {
-    const x = 20 + pal.t * (W - 40), y = BASE - Math.sin(Math.PI * pal.t) * (BASE - APEX);
     const mi = moonInfo(now);
-    const R = 8.5, cover = 2 * Math.abs(mi.phase - 0.5);
+    const cover = 2 * Math.abs(mi.phase - 0.5);
     const dx = 2 * R * (1 - cover) * (mi.phase < 0.5 ? -1 : 1);
-    orb = `<circle cx="${x}" cy="${y}" r="16" fill="url(#moonglow)"/>
-           <circle cx="${x}" cy="${y}" r="${R}" fill="#E8EDF5"/>
-           <circle cx="${x + dx}" cy="${y}" r="${R}" fill="${pal.sky[0]}" opacity="0.92"/>`;
+    orb = `<circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${(R * 2.3).toFixed(1)}" fill="url(#moonglow)"/>
+           <circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="#E8EDF5"/>
+           <circle cx="${(ox + dx).toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="${pal.sky[0]}" opacity="0.92"/>`;
   }
   const starOpacity = pal.mode === 'night' ? 1 : 0.12;
-  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
     <defs>
       <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${pal.sky[0]}"/>
@@ -585,11 +669,21 @@ function renderCelestial() {
       <radialGradient id="sunglow"><stop offset="0%" stop-color="#FFD75E" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFD75E" stop-opacity="0"/></radialGradient>
       <radialGradient id="moonglow"><stop offset="0%" stop-color="#dfe8ff" stop-opacity="0.55"/><stop offset="100%" stop-color="#dfe8ff" stop-opacity="0"/></radialGradient>
     </defs>
-    <rect width="${W}" height="${H}" fill="url(#sky)" opacity="0.92" rx="14"/>
+    <rect width="${W}" height="${H}" fill="url(#sky)"/>
     <g opacity="${starOpacity}">${stars.map(s => `<circle class="star" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.r.toFixed(2)}" fill="#dfe8ff" opacity="${s.o.toFixed(2)}" style="animation-delay:${s.d.toFixed(1)}s"/>`).join('')}</g>
-    <path d="M0,84 Q ${W*0.25},${BASE-10} ${W*0.5},${BASE-2} T ${W},84 L${W},${H} L0,${H} Z" fill="rgba(255,255,255,0.05)"/>
+    <path d="M0,${H} L0,${(H-18).toFixed(0)} Q ${(W*0.3).toFixed(0)},${(H-30).toFixed(0)} ${(W*0.55).toFixed(0)},${(H-24).toFixed(0)} T ${W},${(H-22).toFixed(0)} L${W},${H} Z" fill="rgba(0,0,0,0.22)"/>
     ${orb}
   </svg>`;
+}
+// keep the scene matched to its box (panel resizes, rotation, zoom)
+if (window.ResizeObserver) {
+  let celRaf = 0;
+  new ResizeObserver(() => {
+    cancelAnimationFrame(celRaf);
+    celRaf = requestAnimationFrame(renderCelestial);
+  }).observe(document.getElementById('celestial'));
+} else {
+  window.addEventListener('resize', () => renderCelestial());
 }
 
 /* ────────────────────────── search ────────────────────────── */
@@ -1103,6 +1197,63 @@ function addTodo() {
 }
 document.getElementById('todoAddBtn').addEventListener('click', addTodo);
 todoInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+
+/* ────────────────────────── notes ────────────────────────── */
+const notesArea = document.getElementById('notesArea');
+const notesSaved = document.getElementById('notesSaved');
+const notesCount = document.getElementById('notesCount');
+const NOTES_KEY = 'starter-page-notes';
+let notesTimer = null;
+let notesFlashTimer = null;
+
+function noteWords() {
+  const t = notesArea.value.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+function renderNotesMeta(savedLabel) {
+  notesCount.textContent = `${notesArea.value.length} chars · ${noteWords()} words`;
+  if (savedLabel !== undefined) {
+    notesSaved.textContent = savedLabel;
+    notesSaved.classList.add('flash');
+    clearTimeout(notesFlashTimer);
+    notesFlashTimer = setTimeout(() => notesSaved.classList.remove('flash'), 1200);
+  }
+}
+function saveNotesNow() {
+  try {
+    localStorage.setItem(NOTES_KEY, notesArea.value);
+    renderNotesMeta('saved ✓');
+  } catch {
+    renderNotesMeta('storage full!');
+  }
+}
+notesArea.addEventListener('input', () => {
+  renderNotesMeta();
+  notesSaved.textContent = 'typing…';
+  clearTimeout(notesTimer);
+  notesTimer = setTimeout(saveNotesNow, 600);
+});
+notesArea.value = localStorage.getItem(NOTES_KEY) || '';
+renderNotesMeta();
+document.getElementById('notesExport').addEventListener('click', () => {
+  saveNotesNow(); // flush pending edits before export
+  const text = notesArea.value || '';
+  const stamp = new Date().toISOString().slice(0, 10);
+  const blob = new Blob([text + (text && !text.endsWith('\n') ? '\n' : '')], { type: 'text/markdown;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `notes-${stamp}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* keyboard shortcut: n focuses notes (unless typing elsewhere) */
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  const dialogOpen = document.querySelector('dialog[open]');
+  if (typing || dialogOpen) return;
+  if (e.key === 'n') { e.preventDefault(); notesArea.focus(); }
+});
 
 /* ────────────────────────── settings ────────────────────────── */
 const settingsDialog = document.getElementById('settingsDialog');
