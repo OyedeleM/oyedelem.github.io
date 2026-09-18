@@ -36,6 +36,30 @@
   .star { animation: twinkle 4s ease-in-out infinite; }
   @keyframes twinkle { 0%,100% { opacity: 0.9; } 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) { .star { animation: none; } }
+  /* smooth sky: gradient stops, orb motion, star fade all glide between renders */
+  .sky-stop0, .sky-stop1, .sky-stop2 { transition: stop-color 1.6s ease; }
+  .sky-stars { transition: opacity 1.6s ease; }
+  .orb-glow-sun, .orb-glow-moon, .orb-body, .orb-shadow {
+    transition: cx 1.6s ease, cy 1.6s ease, r 1.6s ease, opacity 1.6s ease, fill 1.6s ease;
+  }
+  .sky-svg.no-anim .sky-stop0, .sky-svg.no-anim .sky-stop1, .sky-svg.no-anim .sky-stop2,
+  .sky-svg.no-anim .sky-stars, .sky-svg.no-anim .orb-glow-sun, .sky-svg.no-anim .orb-glow-moon,
+  .sky-svg.no-anim .orb-body, .sky-svg.no-anim .orb-shadow { transition: none !important; }
+
+  /* ── time travel panel ─────────────────────────────── */
+  .timetravel {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 60; width: min(420px, 92vw);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5); padding: 12px 16px 14px;
+  }
+  .timetravel[hidden] { display: none; }
+  .tt-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .tt-head span:first-child { font-size: 13px; font-weight: 600; }
+  #ttLabel { font-size: 15px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  #ttSlider { width: 100%; accent-color: var(--accent); cursor: ew-resize; }
+  .tt-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 11px; color: var(--text-dim); }
+  .tt-foot .btn { font-size: 11px; padding: 4px 12px; border-radius: 8px; }
   .sky-content {
     position: relative; z-index: 1; padding: 18px 22px 16px;
     display: flex; flex-direction: column; min-height: 190px; justify-content: space-between;
@@ -428,8 +452,17 @@
     </div>
   </div>
 
+  <div class="timetravel" id="timetravel" hidden>
+    <div class="tt-head"><span>⏳ Time travel <span style="font-weight:400;color:var(--text-dim)">(preview only)</span></span><span id="ttLabel">--:--</span></div>
+    <input type="range" id="ttSlider" min="0" max="1439" step="5" aria-label="Scrub time of day">
+    <div class="tt-foot">
+      <button type="button" class="btn" id="ttNow">● Back to now</button>
+      <span>dawn · noon · dusk · night</span>
+    </div>
+  </div>
+
   <footer>
-    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
+    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>t</kbd> time travel &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
     <button class="settings-link" id="openSettings">settings</button>
   </footer>
 </main>
@@ -626,56 +659,102 @@ function celestialPalette(now) {
   return { sky, mode, t, sunTimes: { sunrise, sunset } };
 }
 
-function renderCelestial() {
-  const wrap = document.getElementById('celestial');
-  if (!wrap) return;
-  const now = new Date();
-  // work in real element pixels: viewBox = element box, no aspect cropping surprises
-  const W = wrap.clientWidth || 1000;
-  const H = wrap.clientHeight || 230;
-  const pal = celestialPalette(now);
+/* The scene is a persistent SVG skeleton; renderCelestial updates attributes
+   so CSS transitions glide between states instead of snapping. */
+let celState = { W: 0, H: 0, mode: null };
+
+function ensureCelestialSkeleton(wrap) {
+  if (wrap.dataset.built) return;
+  wrap.dataset.built = '1';
   const stars = [];
   let seed = 42;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
-  for (let i = 0; i < 70; i++) stars.push({ x: rnd() * W, y: rnd() * H * 0.62, r: 0.7 + rnd() * 1.5, o: 0.35 + rnd() * 0.65, d: rnd() * 4 });
-  const wxDim = lastWx && ((lastWx.code >= 51 && lastWx.code <= 67) || (lastWx.code >= 80) || lastWx.code >= 95) ? 0.5 : (lastWx && lastWx.code >= 2 ? 0.8 : 1);
-  // orb path: wide screens arc across the right half; narrow screens park it
-  // low-right, below the clock text
-  const narrow = W < 520;
-  const t = pal.t;
-  const ox = narrow ? W * 0.80 : W * (0.62 + t * 0.28);
-  const oy = narrow ? H * 0.66 + (t - 0.5) * H * 0.10 : (H - 26) - Math.sin(Math.PI * t) * (H - 96);
-  const R = pal.mode === 'day' ? Math.min(26, W * 0.055 + 12) : Math.min(20, W * 0.045 + 10);
-  let orb;
-  if (pal.mode === 'day') {
-    orb = `<circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${(R * 2.6).toFixed(1)}" fill="url(#sunglow)" opacity="${0.55 * wxDim}"/>
-           <circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="#FFD75E" opacity="${wxDim}"/>`;
-  } else {
-    const mi = moonInfo(now);
-    const cover = 2 * Math.abs(mi.phase - 0.5);
-    const dx = 2 * R * (1 - cover) * (mi.phase < 0.5 ? -1 : 1);
-    orb = `<circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${(R * 2.3).toFixed(1)}" fill="url(#moonglow)"/>
-           <circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="#E8EDF5"/>
-           <circle cx="${(ox + dx).toFixed(1)}" cy="${oy.toFixed(1)}" r="${R.toFixed(1)}" fill="${pal.sky[0]}" opacity="0.92"/>`;
-  }
-  const starOpacity = pal.mode === 'night' ? 1 : 0.12;
-  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
+  for (let i = 0; i < 70; i++) stars.push({ x: rnd(), y: rnd() * 0.62, r: 0.7 + rnd() * 1.5, o: 0.35 + rnd() * 0.65, d: rnd() * 4 });
+  wrap.innerHTML = `<svg class="sky-svg" width="100%" height="100%" preserveAspectRatio="none">
     <defs>
       <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${pal.sky[0]}"/>
-        <stop offset="55%" stop-color="${pal.sky[1]}"/>
-        <stop offset="100%" stop-color="${pal.sky[2]}"/>
+        <stop class="sky-stop0" offset="0%"/>
+        <stop class="sky-stop1" offset="55%"/>
+        <stop class="sky-stop2" offset="100%"/>
       </linearGradient>
       <radialGradient id="sunglow"><stop offset="0%" stop-color="#FFD75E" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFD75E" stop-opacity="0"/></radialGradient>
       <radialGradient id="moonglow"><stop offset="0%" stop-color="#dfe8ff" stop-opacity="0.55"/><stop offset="100%" stop-color="#dfe8ff" stop-opacity="0"/></radialGradient>
     </defs>
-    <rect width="${W}" height="${H}" fill="url(#sky)"/>
-    <g opacity="${starOpacity}">${stars.map(s => `<circle class="star" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.r.toFixed(2)}" fill="#dfe8ff" opacity="${s.o.toFixed(2)}" style="animation-delay:${s.d.toFixed(1)}s"/>`).join('')}</g>
-    <path d="M0,${H} L0,${(H-18).toFixed(0)} Q ${(W*0.3).toFixed(0)},${(H-30).toFixed(0)} ${(W*0.55).toFixed(0)},${(H-24).toFixed(0)} T ${W},${(H-22).toFixed(0)} L${W},${H} Z" fill="rgba(0,0,0,0.22)"/>
-    ${orb}
+    <rect id="skyRect" width="100%" height="100%" fill="url(#sky)"/>
+    <g class="sky-stars" id="skyStars">${stars.map(s => `<circle class="star" data-x="${s.x.toFixed(4)}" data-y="${s.y.toFixed(4)}" data-r="${s.r.toFixed(2)}" data-o="${s.o.toFixed(2)}" style="animation-delay:${s.d.toFixed(1)}s"/>`).join('')}</g>
+    <path id="skyGround" fill="rgba(0,0,0,0.22)"/>
+    <circle class="orb-glow-sun" id="orbSunGlow" fill="url(#sunglow)"/>
+    <circle class="orb-body" id="orbSunBody" fill="#FFD75E"/>
+    <circle class="orb-glow-moon" id="orbMoonGlow" fill="url(#moonglow)"/>
+    <circle class="orb-body" id="orbMoonBody" fill="#E8EDF5"/>
+    <circle class="orb-shadow" id="orbMoonShadow"/>
   </svg>`;
 }
-// keep the scene matched to its box (panel resizes, rotation, zoom)
+
+function renderCelestial() {
+  const wrap = document.getElementById('celestial');
+  if (!wrap) return;
+  ensureCelestialSkeleton(wrap);
+  const now = ttDate();
+  // work in real element pixels: viewBox = element box
+  const W = wrap.clientWidth || 1000;
+  const H = wrap.clientHeight || 230;
+  const rebuilt = celState.W !== W || celState.H !== H;
+  const pal = celestialPalette(now);
+  const svg = wrap.querySelector('svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  // transition suppression while geometry (not palette) changes
+  if (rebuilt) svg.classList.add('no-anim');
+
+  // sky gradient
+  svg.querySelector('.sky-stop0').setAttribute('stop-color', pal.sky[0]);
+  svg.querySelector('.sky-stop1').setAttribute('stop-color', pal.sky[1]);
+  svg.querySelector('.sky-stop2').setAttribute('stop-color', pal.sky[2]);
+
+  // stars: positions depend on box size
+  const starEls = svg.querySelectorAll('#skyStars .star');
+  starEls.forEach(el => {
+    el.setAttribute('cx', (parseFloat(el.dataset.x) * W).toFixed(1));
+    el.setAttribute('cy', (parseFloat(el.dataset.y) * H).toFixed(1));
+    el.setAttribute('r', el.dataset.r);
+    el.setAttribute('fill-opacity', el.dataset.o);
+  });
+  svg.querySelector('#skyStars').setAttribute('opacity', pal.mode === 'night' ? 1 : 0.12);
+
+  // ground strip
+  svg.querySelector('#skyGround').setAttribute('d',
+    `M0,${H} L0,${H-18} Q ${W*0.3},${H-30} ${W*0.55},${H-24} T ${W},${H-22} L${W},${H} Z`);
+
+  // orb
+  const wxDim = lastWx && ((lastWx.code >= 51 && lastWx.code <= 67) || (lastWx.code >= 80) || lastWx.code >= 95) ? 0.5 : (lastWx && lastWx.code >= 2 ? 0.8 : 1);
+  const narrow = W < 520;
+  const t = pal.t;
+  const ox = narrow ? W * 0.80 : W * (0.62 + t * 0.28);
+  const oy = narrow ? H * 0.66 + (t - 0.5) * H * 0.10 : (H - 26) - Math.sin(Math.PI * t) * (H - 96);
+  const sun = pal.mode === 'day';
+  const R = sun ? Math.min(26, W * 0.055 + 12) : Math.min(20, W * 0.045 + 10);
+  const set = (id, attrs) => { const el = svg.querySelector('#' + id); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); };
+  set('orbSunGlow', { cx: ox, cy: oy, r: R * 2.6, opacity: sun ? 0.55 * wxDim : 0 });
+  set('orbSunBody', { cx: ox, cy: oy, r: R, opacity: sun ? wxDim : 0 });
+  set('orbMoonGlow', { cx: ox, cy: oy, r: R * 2.3, opacity: sun ? 0 : 1 });
+  set('orbMoonBody', { cx: ox, cy: oy, r: R, opacity: sun ? 0 : 1 });
+  if (!sun) {
+    const mi = moonInfo(now);
+    const cover = 2 * Math.abs(mi.phase - 0.5);
+    const dx = 2 * R * (1 - cover) * (mi.phase < 0.5 ? -1 : 1);
+    set('orbMoonShadow', { cx: ox + dx, cy: oy, r: R, fill: pal.sky[0], opacity: 0.92 });
+  } else {
+    set('orbMoonShadow', { opacity: 0 });
+  }
+
+  if (rebuilt) {
+    celState.W = W; celState.H = H;
+    requestAnimationFrame(() => svg.classList.remove('no-anim'));
+  }
+  celState.mode = pal.mode;
+}
+
+/* keep the scene matched to its box (panel resizes, rotation, zoom) */
 if (window.ResizeObserver) {
   let celRaf = 0;
   new ResizeObserver(() => {
@@ -685,6 +764,41 @@ if (window.ResizeObserver) {
 } else {
   window.addEventListener('resize', () => renderCelestial());
 }
+
+/* ────────────────────────── time travel ────────────────────────── */
+/* A hidden preview mode: scrubs the clock+sky through the day without
+   touching real state. Press 't' to toggle. */
+let ttMin = null; // null = real time
+function ttDate() {
+  if (ttMin === null) return new Date();
+  const d = new Date();
+  d.setHours(Math.floor(ttMin / 60), ttMin % 60); // keep real seconds ticking
+  return d;
+}
+const ttPanel = document.getElementById('timetravel');
+const ttSlider = document.getElementById('ttSlider');
+const ttLabel = document.getElementById('ttLabel');
+function ttToggle() {
+  ttPanel.hidden = !ttPanel.hidden;
+  if (!ttPanel.hidden) {
+    const d = ttMin === null ? new Date() : ttDate();
+    ttMin = d.getHours() * 60 + d.getMinutes();
+    ttSlider.value = ttMin;
+    ttLabel.textContent = String(Math.floor(ttMin / 60)).padStart(2, '0') + ':' + String(ttMin % 60).padStart(2, '0');
+  } else {
+    ttReset();
+  }
+}
+function ttReset() {
+  ttMin = null;
+  tick(); renderCelestial();
+}
+ttSlider.addEventListener('input', () => {
+  ttMin = parseInt(ttSlider.value, 10);
+  ttLabel.textContent = String(Math.floor(ttMin / 60)).padStart(2, '0') + ':' + String(ttMin % 60).padStart(2, '0');
+  tick(); renderCelestial();
+});
+document.getElementById('ttNow').addEventListener('click', () => { ttReset(); ttPanel.hidden = true; });
 
 /* ────────────────────────── search ────────────────────────── */
 const ENGINES = {
@@ -776,7 +890,7 @@ function wxAdvice() {
   return '';
 }
 function tick() {
-  const now = new Date();
+  const now = ttDate(); // respects time-travel scrubbing
   document.documentElement.dataset.tod = timeOfDay(now.getHours());
   const hh = state.clock24 ? now.getHours() : ((now.getHours() % 12) || 12);
   const mm = String(now.getMinutes()).padStart(2, '0');
@@ -1253,6 +1367,7 @@ document.addEventListener('keydown', e => {
   const dialogOpen = document.querySelector('dialog[open]');
   if (typing || dialogOpen) return;
   if (e.key === 'n') { e.preventDefault(); notesArea.focus(); }
+  else if (e.key === 't') { ttToggle(); }
 });
 
 /* ────────────────────────── settings ────────────────────────── */
