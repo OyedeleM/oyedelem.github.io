@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Start</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="description" content="Personal starter page: clock with sun & moon, search bangs, bookmarks, weather and todos.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Start">
 <style>
   :root {
     --radius: 16px;
@@ -21,6 +29,19 @@
     --glow2: rgba(180,90,255,.10);
     --bg: #0b0e1a;
   }
+  /* ── celestial scene (day/night clock) ─────────────── */
+  .clockwrap { position: relative; }
+  .celestial { height: 84px; position: relative; margin-bottom: 2px; }
+  .celestial svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .star { animation: twinkle 4s ease-in-out infinite; }
+  @keyframes twinkle { 0%,100% { opacity: 0.9; } 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .star { animation: none; } }
+  .clock { color: var(--digit, var(--text)); }
+  html[data-tod="morning"]   { --digit: #ffe9d2; }
+  html[data-tod="afternoon"] { --digit: #ffffff; }
+  html[data-tod="evening"]   { --digit: #ffd9c2; }
+  html[data-tod="night"]     { --digit: #c9d6ff; }
+
   /* time-of-day tint: shifts the ambient glow through the day */
   html[data-tod="morning"]   { --glow1: rgba(255,190,110,.17); --glow2: rgba(255,140,90,.10); }
   html[data-tod="afternoon"] { --glow1: rgba(90,160,255,.15);  --glow2: rgba(120,200,255,.09); }
@@ -290,8 +311,11 @@
 <main>
   <header class="top">
     <div>
-      <div class="clock" id="clock">--:--<span class="sec"></span></div>
-      <div class="date-line" id="dateLine"></div>
+      <div class="clockwrap">
+        <div class="celestial" id="celestial" aria-hidden="true"></div>
+        <div class="clock" id="clock">--:--<span class="sec"></span></div>
+        <div class="date-line" id="dateLine"></div>
+      </div>
     </div>
     <div class="weather loading" id="weather" title="Weather — click to refresh or enable location">
       <div class="w-main">…</div>
@@ -442,6 +466,132 @@ function load() {
 let state = load();
 const save = () => localStorage.setItem(LS_KEY, JSON.stringify(state));
 
+/* ────────────────────────── celestial clock ────────────────────────── */
+const RAD = Math.PI / 180;
+const DAY_MS = 86400000;
+const toDays = d => d / DAY_MS - 0.5 + 2440588 - 2451545;   // days since J2000
+const fromJulian = j => (j + 0.5 - 2440588) * DAY_MS;
+
+function sunTimes(date, lat, lng) {
+  const lw = RAD * -lng, phi = RAD * lat;
+  const d = toDays(date);
+  const n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+  const ds = 0.0009 + lw / (2 * Math.PI) + n;
+  const M = RAD * (357.5291 + 0.98560028 * ds);
+  const C = RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + RAD * 102.9372 + Math.PI;
+  const dec = Math.asin(Math.sin(23.4397 * RAD) * Math.sin(L));
+  const corr = 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+  const cosW = (Math.sin(-0.833 * RAD) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+  if (cosW > 1) return { polar: 'day' };   // midnight sun
+  if (cosW < -1) return { polar: 'night' };// polar night
+  const w = Math.acos(cosW);
+  const Jrise = 2451545 + (0.0009 + (-w + lw) / (2 * Math.PI) + n) + corr;
+  const Jset  = 2451545 + (0.0009 + ( w + lw) / (2 * Math.PI) + n) + corr;
+  return {
+    sunrise: (Jrise + 0.5 - 2440588) * DAY_MS,
+    sunset:  (Jset  + 0.5 - 2440588) * DAY_MS,
+  };
+}
+
+function moonInfo(date) { // phase 0=new .25=1st qtr .5=full .75=last qtr; fraction = lit %
+  const d = toDays(date);
+  const sunM = RAD * (357.5291 + 0.98560028 * d);
+  const sunL = sunM + RAD * (1.9148 * Math.sin(sunM) + 0.02 * Math.sin(2 * sunM)) + RAD * 102.9372 + Math.PI;
+  const mL = RAD * (218.316 + 13.176396 * d) + RAD * 6.289 * Math.sin(RAD * (134.963 + 13.064993 * d));
+  const angle = ((mL - sunL) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  const elong = angle > Math.PI ? 2 * Math.PI - angle : angle;
+  return { phase: angle / (2 * Math.PI), fraction: (1 - Math.cos(elong)) / 2 };
+}
+
+const SKY = {
+  night: ['#050816', '#0c1132', '#182052'],
+  dawn:  ['#241a44', '#6e4272', '#f0925c'],
+  day:   ['#79bdf7', '#b8ddf9', '#eaf6ff'],
+  dusk:  ['#2c1a4e', '#8a4a6e', '#ff9a5a'],
+};
+const mix = (a, b, t) => {
+  const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16));
+  return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join('');
+};
+
+function celestialPalette(now) {
+  const loc = state.weatherLoc;
+  const lat = loc ? loc.lat : 40.7, lon = loc ? loc.lon : -74;
+  const { sunrise, sunset, polar } = sunTimes(now, lat, lon);
+  if (polar === 'day')   return { sky: SKY.day, mode: 'day', t: 0.5, sunTimes: { polar } };
+  if (polar === 'night') return { sky: SKY.night, mode: 'night', t: 0.5, sunTimes: { polar } };
+  const T = now.getTime();
+  const b = 45 * 60000; // twilight blend window
+  let sky, mode, t;
+  if (T >= sunrise && T <= sunset) {           // day
+    t = (T - sunrise) / (sunset - sunrise);
+    const nearRise = Math.max(0, 1 - (T - sunrise) / b);
+    const nearSet = Math.max(0, 1 - (sunset - T) / b);
+    sky = [mix(SKY.dawn[0], SKY.dusk[0], nearSet / (nearRise + nearSet || 1)),
+           mix(SKY.dawn[1], SKY.dusk[1], nearSet / (nearRise + nearSet || 1)),
+           mix(SKY.dawn[2], SKY.dusk[2], nearSet / (nearRise + nearSet || 1))];
+    sky = sky.map((c, i) => mix(SKY.day[i], c, Math.max(nearRise, nearSet)));
+    mode = 'day';
+  } else {                                      // night
+    const prevSet = T < sunrise ? sunset - DAY_MS : sunset;
+    const nextRise = T < sunrise ? sunrise : sunrise + DAY_MS;
+    t = (T - prevSet) / (nextRise - prevSet);
+    const nearSet = Math.max(0, 1 - (T - prevSet) / b);
+    const nearRise = Math.max(0, 1 - (nextRise - T) / b);
+    const tw = Math.max(nearSet, nearRise);
+    const duskish = T < sunrise && T > prevSet + (nextRise - prevSet) / 2 || T >= sunset;
+    const twPalette = duskish ? SKY.dusk : SKY.dawn;
+    sky = [mix(SKY.night[0], twPalette[0], tw), mix(SKY.night[1], twPalette[1], tw), mix(SKY.night[2], twPalette[2], tw)];
+    mode = 'night';
+  }
+  return { sky, mode, t, sunTimes: { sunrise, sunset } };
+}
+
+function renderCelestial() {
+  const wrap = document.getElementById('celestial');
+  if (!wrap) return;
+  const now = new Date();
+  const W = 320, H = 84, BASE = 78, APEX = 16;
+  const pal = celestialPalette(now);
+  const stars = [];
+  let seed = 42;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  for (let i = 0; i < 42; i++) stars.push({ x: rnd() * W, y: rnd() * H * 0.72, r: 0.4 + rnd() * 1.1, o: 0.35 + rnd() * 0.65, d: rnd() * 4 });
+  const wxDim = lastWx && ((lastWx.code >= 51 && lastWx.code <= 67) || (lastWx.code >= 80) || lastWx.code >= 95) ? 0.5 : (lastWx && lastWx.code >= 2 ? 0.8 : 1);
+  let orb = '';
+  if (pal.mode === 'day') {
+    const x = 20 + pal.t * (W - 40), y = BASE - Math.sin(Math.PI * pal.t) * (BASE - APEX);
+    orb = `<circle cx="${x}" cy="${y}" r="20" fill="url(#sunglow)" opacity="${0.55 * wxDim}"/>
+           <circle cx="${x}" cy="${y}" r="9" fill="#FFD75E" opacity="${wxDim}"/>`;
+  } else {
+    const x = 20 + pal.t * (W - 40), y = BASE - Math.sin(Math.PI * pal.t) * (BASE - APEX);
+    const mi = moonInfo(now);
+    const R = 8.5, cover = 2 * Math.abs(mi.phase - 0.5);
+    const dx = 2 * R * (1 - cover) * (mi.phase < 0.5 ? -1 : 1);
+    orb = `<circle cx="${x}" cy="${y}" r="16" fill="url(#moonglow)"/>
+           <circle cx="${x}" cy="${y}" r="${R}" fill="#E8EDF5"/>
+           <circle cx="${x + dx}" cy="${y}" r="${R}" fill="${pal.sky[0]}" opacity="0.92"/>`;
+  }
+  const starOpacity = pal.mode === 'night' ? 1 : 0.12;
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${pal.sky[0]}"/>
+        <stop offset="55%" stop-color="${pal.sky[1]}"/>
+        <stop offset="100%" stop-color="${pal.sky[2]}"/>
+      </linearGradient>
+      <radialGradient id="sunglow"><stop offset="0%" stop-color="#FFD75E" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFD75E" stop-opacity="0"/></radialGradient>
+      <radialGradient id="moonglow"><stop offset="0%" stop-color="#dfe8ff" stop-opacity="0.55"/><stop offset="100%" stop-color="#dfe8ff" stop-opacity="0"/></radialGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#sky)" opacity="0.92" rx="14"/>
+    <g opacity="${starOpacity}">${stars.map(s => `<circle class="star" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.r.toFixed(2)}" fill="#dfe8ff" opacity="${s.o.toFixed(2)}" style="animation-delay:${s.d.toFixed(1)}s"/>`).join('')}</g>
+    <path d="M0,84 Q ${W*0.25},${BASE-10} ${W*0.5},${BASE-2} T ${W},84 L${W},${H} L0,${H} Z" fill="rgba(255,255,255,0.05)"/>
+    ${orb}
+  </svg>`;
+}
+
 /* ────────────────────────── search ────────────────────────── */
 const ENGINES = {
   ddg:    { label: 'duckduckgo', url: q => 'https://duckduckgo.com/?q=' + encodeURIComponent(q) },
@@ -556,7 +706,15 @@ function tick() {
     dateLine.append(a);
   }
 }
-setInterval(tick, 1000);
+let lastCelestialMin = -1;
+const _tick = tick;
+tick = function() {  // extend tick: rebuild the sky once a minute
+  _tick();
+  const now = new Date();
+  const m = now.getHours() * 60 + now.getMinutes();
+  if (m !== lastCelestialMin) { lastCelestialMin = m; renderCelestial(); }
+};
+setInterval(() => tick(), 1000);
 
 /* ────────────────────────── weather ────────────────────────── */
 const WMO = c => {
@@ -626,13 +784,26 @@ async function fetchWeather() {
     weatherEl.querySelector('.w-main').textContent =
       `${icon} ${Math.round(d.current.temperature_2m)}°  H:${Math.round(d.daily.temperature_2m_max[0])}° L:${Math.round(d.daily.temperature_2m_min[0])}°`;
     weatherEl.querySelector('.w-sub').textContent = `${desc} · ${city}`;
+    try { localStorage.setItem('wx-cache', JSON.stringify(d)); } catch {}
     lastWx = { code: d.current.weather_code, temp: d.current.temperature_2m };
-    tick(); // refresh greeting with weather advice
+    tick(); // refresh greeting + re-render sky with cloud dimming
     renderForecast(d.daily);
     renderRainAlert(d.daily);
   } catch {
-    weatherEl.querySelector('.w-main').textContent = '🌡️';
-    weatherEl.querySelector('.w-sub').textContent = 'weather unavailable';
+    const cached = localStorage.getItem('wx-cache');
+    if (cached) {
+      try {
+        const d = JSON.parse(cached);
+        const [icon, desc] = WMO(d.current.weather_code);
+        weatherEl.querySelector('.w-main').textContent =
+          `${icon} ${Math.round(d.current.temperature_2m)}°  H:${Math.round(d.daily.temperature_2m_max[0])}° L:${Math.round(d.daily.temperature_2m_min[0])}°`;
+        weatherEl.querySelector('.w-sub').textContent = `${desc} · ${city} · offline`;
+        renderForecast(d.daily);
+      } catch {}
+    } else {
+      weatherEl.querySelector('.w-main').textContent = '🌡️';
+      weatherEl.querySelector('.w-sub').textContent = 'weather unavailable';
+    }
   }
   weatherEl.classList.remove('loading');
 }
@@ -1052,6 +1223,12 @@ function applyAll() {
   renderEngine(); tick(); renderGroups(); renderTodos(); fetchWeather();
 }
 applyAll();
+
+/* register service worker for offline + installability */
+const secureEnough = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+if ('serviceWorker' in navigator && secureEnough) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>
