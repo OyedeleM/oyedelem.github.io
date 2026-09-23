@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resume Match — resume vs job description</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="description" content="Paste your resume and a job description; get a match score, covered/missing skills, and concrete improvement suggestions. Runs entirely in your browser.">
+<style>
+  :root {
+    --radius: 16px;
+    --card: rgba(255,255,255,.055);
+    --card-hover: rgba(255,255,255,.09);
+    --border: rgba(255,255,255,.10);
+    --text: #e8eaf0;
+    --text-dim: #9aa1b2;
+    --accent: #7aa2ff;
+    --accent-soft: rgba(122,162,255,.14);
+    --ok: #4ade80;
+    --ok-soft: rgba(74,222,128,.13);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251,191,36,.13);
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255,107,107,.13);
+    --shadow: 0 8px 32px rgba(0,0,0,.35);
+    --bg: #0b0e1a;
+    --glow1: rgba(90,120,255,.16);
+    --glow2: rgba(180,90,255,.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; justify-content: center;
+    overflow-y: auto; min-height: 100vh;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(60% 45% at 22% 8%, var(--glow1), transparent 70%),
+      radial-gradient(50% 40% at 80% 90%, var(--glow2), transparent 70%);
+  }
+  main { width: 100%; max-width: 1080px; padding: 40px 24px 80px; }
+
+  header.top { text-align: center; margin-bottom: 26px; }
+  .logo { font-size: 40px; line-height: 1; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.4px; margin-top: 6px; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .tagline { margin-top: 6px; color: var(--text-dim); font-size: 14px; }
+  .tagline kbd {
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px;
+    font-size: 11px; margin: 0 2px; color: var(--text);
+  }
+
+  /* ── input panels ─────────────────────────────────── */
+  .inputs { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .inputs { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow);
+    display: flex; flex-direction: column; transition: border-color .15s;
+  }
+  .panel.dragover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .p-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .p-num {
+    width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .p-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .p-tools { display: flex; gap: 6px; }
+  .mini {
+    border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+    font-size: 11px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .mini:hover { color: var(--accent); border-color: var(--accent); }
+  textarea {
+    width: 100%; min-height: 230px; resize: vertical;
+    background: rgba(0,0,0,.18); border: 1px solid var(--border); border-radius: 12px;
+    color: var(--text); font-size: 13.5px; line-height: 1.55; padding: 12px;
+    outline: none; font-family: inherit; transition: border-color .15s;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--text-dim); }
+  .p-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+  .p-foot .hint { font-style: italic; }
+
+  .actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin: 18px 0 8px; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--border); background: transparent; color: var(--text);
+    font-size: 13px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { background: var(--card-hover); }
+  .btn.primary {
+    background: var(--accent-soft); border-color: transparent; color: var(--accent);
+    font-weight: 700; font-size: 15px; padding: 12px 28px;
+  }
+  .btn.primary:hover { filter: brightness(1.15); background: var(--accent-soft); }
+  .form-note { text-align: center; font-size: 12.5px; color: var(--warn); min-height: 18px; }
+
+  /* ── results ──────────────────────────────────────── */
+  #results { margin-top: 22px; }
+  #results[hidden] { display: none; }
+
+  .scorecard {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 22px; backdrop-filter: blur(8px);
+    display: flex; gap: 26px; align-items: center; flex-wrap: wrap;
+  }
+  .donut-wrap { position: relative; width: 168px; height: 168px; flex-shrink: 0; margin: 0 auto; }
+  .donut-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 12; }
+  .ring {
+    fill: none; stroke: var(--accent); stroke-width: 12; stroke-linecap: round;
+    stroke-dasharray: 351.86; stroke-dashoffset: 351.86;
+    transition: stroke-dashoffset 1s cubic-bezier(.22,1,.36,1), stroke .6s;
+  }
+  .score-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; pointer-events: none;
+  }
+  #scoreNum { font-size: 40px; font-weight: 200; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  #scoreNum small { font-size: 20px; color: var(--text-dim); font-weight: 300; }
+  .score-center .of { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-dim); margin-top: 2px; }
+
+  .score-side { flex: 1; min-width: 240px; }
+  #verdict { font-size: 18px; font-weight: 650; }
+  #verdictSub { margin-top: 4px; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; }
+  .stat-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .stat {
+    border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px;
+    font-size: 12.5px; display: flex; align-items: center; gap: 6px;
+  }
+  .stat b { font-variant-numeric: tabular-nums; }
+  .stat.ok b { color: var(--ok); } .stat.warn b { color: var(--warn); } .stat.info b { color: var(--accent); }
+
+  /* ── chip sections ────────────────────────────────── */
+  .result-sec {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 16px; margin-top: 14px; backdrop-filter: blur(8px);
+  }
+  .sec-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.6px;
+    color: var(--text-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips .none { color: var(--text-dim); font-size: 13px; font-style: italic; padding: 4px 2px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 999px; padding: 6px 13px; font-size: 13.5px; font-weight: 500;
+    border: 1px solid transparent;
+  }
+  .chip em {
+    font-style: normal; font-size: 10.5px; font-weight: 700; opacity: .75;
+    background: rgba(255,255,255,.10); padding: 1px 6px; border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.ok   { background: var(--ok-soft);   color: var(--ok);   border-color: rgba(74,222,128,.25); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: rgba(251,191,36,.25); }
+  .chip.info { background: var(--accent-soft); color: var(--accent); border-color: rgba(122,162,255,.25); }
+  .chip .tag {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,.12);
+  }
+
+  /* ── suggestions ──────────────────────────────────── */
+  .sug-list { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+  .sug-list li {
+    display: flex; gap: 10px; font-size: 13.5px; line-height: 1.55;
+    padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.15);
+    border: 1px solid var(--border);
+  }
+  .sug-list li .ico { flex-shrink: 0; }
+  .sug-list li b { color: var(--accent); font-weight: 600; }
+
+  /* ── breakdown ────────────────────────────────────── */
+  details.breakdown summary {
+    cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: 1.6px;
+    color: var(--text-dim); user-select: none;
+  }
+  details.breakdown summary:hover { color: var(--text); }
+  .brows { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  .brow { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .brow .bname { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+  .brow .bbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .brow .bbar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); opacity: .8; }
+  .brow .bfreq { width: 34px; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .brow .bstate { width: 92px; text-align: right; font-size: 11.5px; flex-shrink: 0; }
+  .brow .bstate.ok { color: var(--ok); } .brow .bstate.warn { color: var(--warn); } .brow .bstate.info { color: var(--accent); }
+  .how {
+    margin-top: 14px; font-size: 12.5px; color: var(--text-dim); line-height: 1.6;
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .how code { color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+
+  footer { margin-top: 44px; text-align: center; color: var(--text-dim); font-size: 12px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="logo">🎯</div>
+    <h1>Resume <em>Match</em></h1>
+    <p class="tagline">Paste your resume + a job description → get a match score, gaps, and fixes.
+      Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to analyze. Everything stays in your browser.</p>
+  </header>
+
+  <section class="inputs">
+    <div class="panel" id="panelResume">
+      <div class="p-head">
+        <span class="p-num">1</span>
+        <span class="p-title">Your resume</span>
+        <span class="p-tools">
+          <button class="mini" id="loadResumeFile" type="button">⬆ Upload</button>
+          <button class="mini" id="clearResume" type="button">✕ Clear</button>
+        </span>
+      </div>
+      <textarea id="resumeText" spellcheck="false" placeholder="Paste your resume here…
+
+Tip: you can also drop a .txt, .md or .pdf file on this panel.
+
+Python
+SQL
+Pandas
+Machine Learning
+Excel
+Data visualization with Matplotlib
+Built dashboards for the sales team"></textarea>
+      <div class="p-foot"><span id="resumeCount">0 chars</span><span class="hint">drop a file anywhere on this panel</span></div>
+      <input type="file" id="resumeFile" accept=".txt,.md,.markdown,.pdf,.doc,.docx" hidden>
+    </div>
+
+    <div class="panel" id="panelJd">
+      <div class="p-head">
+        <span class="p-num">2</span>
+        <span class="p-title">Job description</span>
+        <span class="p-tools">
+          <button class="mini" id="loadJdFile" type="button">⬆ Upload</button>
+          <button class="mini" id="clearJd" type="button">✕ Clear</button>
+        </span>
+      </div>
+      <textarea id="jdText" spellcheck="false" placeholder="Paste the job posting here…
+
+We are looking for a Data Analyst who has experience
+with SQL, Python, Power BI, Excel, and data visualization.
+
+Requirements:
+- 2+ years of experience with SQL
+- Must have strong communication skills
+- Nice to have: Tableau, cloud experience"></textarea>
+      <div class="p-foot"><span id="jdCount">0 chars</span><span class="hint">requirements get extra weight</span></div>
+      <input type="file" id="jdFile" accept=".txt,.md,.markdown,.pdf,.doc,.docx" hidden>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="btn primary" id="analyzeBtn">✦ Analyze match</button>
+    <button class="btn" id="sampleBtn">🧪 Load sample</button>
+    <button class="btn" id="resetBtn">Clear both</button>
+  </div>
+  <div class="form-note" id="formNote" aria-live="polite"></div>
+
+  <section id="results" hidden aria-live="polite">
+    <div class="scorecard">
+      <div class="donut-wrap">
+        <svg viewBox="0 0 140 140" aria-hidden="true">
+          <circle class="ring-bg" cx="70" cy="70" r="56"></circle>
+          <circle class="ring" id="ring" cx="70" cy="70" r="56"></circle>
+        </svg>
+        <div class="score-center">
+          <div id="scoreNum">0<small>%</small></div>
+          <div class="of">match</div>
+        </div>
+      </div>
+      <div class="score-side">
+        <div id="verdict">—</div>
+        <div id="verdictSub"></div>
+        <div class="stat-row">
+          <span class="stat ok">✅ <b id="statMatched">0</b> covered</span>
+          <span class="stat warn">⚠️ <b id="statMissing">0</b> missing</span>
+          <span class="stat info">🔁 <b id="statTransfer">0</b> close enough</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-sec">
+      <div class="sec-title"><span class="dot" style="background:var(--ok)"></span>Skills you have</div>
+      <div class="chips" id="matchedChips"></div>
+    </div>
+
+    <div class="result-sec">
+      <div class="sec-title"><span class="dot" style="background:var(--warn)"></span>Skills mentioned but not found in your resume</div>
+      <div class="chips" id="missingChips"></div>
+    </div>
+
+    <div class="result-sec">
+      <div class="sec-title"><span class="dot" style="background:var(--accent)"></span>Close enough — consider mentioning these</div>
+      <div class="chips" id="transferChips"></div>
+    </div>
+
+    <div class="result-sec">
+      <div class="sec-title">💡 Suggested improvements</div>
+      <ul class="sug-list" id="sugList"></ul>
+    </div>
+
+    <div class="result-sec">
+      <details class="breakdown">
+        <summary>Skill-by-skill breakdown &amp; how the score works</summary>
+        <div class="brows" id="brows"></div>
+        <div class="how">
+          The matcher scans <b>~90 skills</b> (with aliases — “postgres” counts as SQL, “powerbi” as Power BI)
+          in both texts, ignoring negated phrases like <code>no experience with X</code>.
+          Score <code>= covered / (covered + missing)</code> where covered skills are weighted by how often
+          and how prominently they appear in your resume (a “Skills” section adds weight, repeats up to ×1.75),
+          and missing skills are penalized more when the posting says <code>required / must have</code> (×1.25),
+          less when it says <code>nice to have / preferred</code> (×0.6), and less again for soft skills.
+          It’s a heuristic, not a verdict — use it to decide what to add, not whether to apply.
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    🔒 100% local — your resume never leaves this device. Saved as you type.
+  </footer>
+</main>
+
+<script>
+'use strict';
+/* ══════════════════════════ skill taxonomy ══════════════════════════ */
+/* n = display name, c = category, a = aliases matched on normalized text,
+   rx = extra regexes run on the raw lowercased text (for symbol-heavy names). */
+const CATS = ['Languages','Data & Analytics','BI & Visualization','ML & AI','Databases','Cloud & DevOps','Engineering','Tools & Workflow','Soft Skills'];
+const SKILLS = [
+  /* Languages */
+  { n:'Python',            c:'Languages', a:['python','python3'] },
+  { n:'SQL',               c:'Languages', a:['sql'], rx:[/\bt\-?sql\b|\bpl\s*\/\s*sql\b/i] },
+  { n:'R',                 c:'Languages', rx:[/(?<![a-z0-9&])r(?![a-z0-9&])/i] },
+  { n:'Java',              c:'Languages', a:['java'], rx:[/\bjava\b(?!script)/i] },
+  { n:'JavaScript',        c:'Languages', a:['javascript','js','es6','ecmascript'] },
+  { n:'TypeScript',        c:'Languages', a:['typescript','ts'] },
+  { n:'C++',               c:'Languages', rx:[/(?<![a-z0-9])c\+\+(?![a-z0-9])/i] },
+  { n:'C#',                c:'Languages', rx:[/(?<![a-z0-9])c#(?![a-z0-9])|\bc sharp\b|\bcsharp\b/i] },
+  { n:'Go',                c:'Languages', rx:[/\bgolang\b|\bgo(?=\s*(?:lang|developer|engineer|programming|development|runtime|routine))/i] },
+  { n:'Ruby',              c:'Languages', a:['ruby','ruby on rails'] },
+  { n:'PHP',               c:'Languages', a:['php','laravel'] },
+  { n:'Bash / Shell',      c:'Languages', a:['bash','shell scripting','shell','zsh','powershell'] },
+  { n:'Scala',             c:'Languages', a:['scala'] },
+  { n:'MATLAB',            c:'Languages', a:['matlab'] },
+  { n:'VBA',               c:'Languages', a:['vba','macros'] },
+
+  /* Data & Analytics */
+  { n:'Data Analysis',     c:'Data & Analytics', a:['data analysis','data analytics','analysing data','analyzing data','data analyst','analytical'] },
+  { n:'Pandas',            c:'Data & Analytics', a:['pandas'] },
+  { n:'NumPy',             c:'Data & Analytics', a:['numpy'] },
+  { n:'Excel',             c:'Data & Analytics', rx:[/(?<!to )\b(?:excel|xlsx|xlsm|xls|spreadsheets?)\b(?!\s+(?:at|in|as)\b)/i] },
+  { n:'Google Sheets',     c:'Data & Analytics', a:['google sheets','google spreadsheets'] },
+  { n:'Statistics',        c:'Data & Analytics', a:['statistics','statistical','statistical analysis','hypothesis testing','regression analysis'] },
+  { n:'A/B Testing',       c:'Data & Analytics', a:['a b testing','ab testing','experimentation','split testing'] },
+  { n:'ETL / Data pipelines', c:'Data & Analytics', a:['etl','elt','data pipeline','data pipelines','data ingestion','airflow','dbt','dataflow'] },
+  { n:'Data modeling',     c:'Data & Analytics', a:['data modeling','data modelling','data model','star schema','data warehouse','data warehousing','redshift'] },
+  { n:'Data cleaning',     c:'Data & Analytics', a:['data cleaning','data cleansing','data wrangling','data quality'] },
+  { n:'Jupyter',           c:'Data & Analytics', a:['jupyter','jupyterlab','colab','notebooks'] },
+  { n:'Reporting',         c:'Data & Analytics', a:['reporting','reports','kpi reporting','automated reporting'] },
+
+  /* BI & Visualization */
+  { n:'Power BI',          c:'BI & Visualization', a:['power bi','powerbi','power pivot','dax'] },
+  { n:'Tableau',           c:'BI & Visualization', a:['tableau'] },
+  { n:'Looker',            c:'BI & Visualization', a:['looker','lookml'] },
+  { n:'Data visualization',c:'BI & Visualization', a:['data visualization','data visualisation','data viz','dataviz','visualizing data','visualising data'] },
+  { n:'Dashboards',        c:'BI & Visualization', a:['dashboard','dashboards','dashboarding'] },
+  { n:'Matplotlib',        c:'BI & Visualization', a:['matplotlib','seaborn','plotly','ggplot','bokeh'] },
+  { n:'D3.js',             c:'BI & Visualization', a:['d3 js','d3'] },
+  { n:'Google Data Studio',c:'BI & Visualization', a:['google data studio','data studio','looker studio'] },
+  { n:'Qlik',              c:'BI & Visualization', a:['qlik','qlikview','qlik sense'] },
+
+  /* ML & AI */
+  { n:'Machine Learning',  c:'ML & AI', a:['machine learning','ml','ml models','predictive modeling','predictive modelling'] },
+  { n:'Deep learning',     c:'ML & AI', a:['deep learning','neural networks','cnn','rnn','lstm','transformers'] },
+  { n:'scikit-learn',      c:'ML & AI', a:['scikit learn','sklearn','scikitlearn'] },
+  { n:'TensorFlow',        c:'ML & AI', a:['tensorflow','keras'] },
+  { n:'PyTorch',           c:'ML & AI', a:['pytorch','torch'] },
+  { n:'XGBoost',           c:'ML & AI', a:['xgboost','lightgbm','catboost','gradient boosting','random forest'] },
+  { n:'NLP',               c:'ML & AI', a:['nlp','natural language processing','text mining','llm','llms','large language models','generative ai','gen ai'] },
+  { n:'Computer vision',   c:'ML & AI', a:['computer vision','opencv','image recognition','image classification'] },
+  { n:'MLOps',             c:'ML & AI', a:['mlops','model deployment','mlflow','model monitoring'] },
+  { n:'Feature engineering', c:'ML & AI', a:['feature engineering','feature selection'] },
+  { n:'AI tools',          c:'ML & AI', a:['chatgpt','openai','copilot','claude','prompt engineering','gemini'] },
+
+  /* Databases */
+  { n:'PostgreSQL',        c:'Databases', a:['postgres','postgresql'] },
+  { n:'MySQL',             c:'Databases', a:['mysql','mariadb'] },
+  { n:'SQL Server',        c:'Databases', a:['sql server','mssql','ms sql'] },
+  { n:'SQLite',            c:'Databases', a:['sqlite'] },
+  { n:'MongoDB',           c:'Databases', a:['mongodb','mongo','nosql'] },
+  { n:'Snowflake',         c:'Databases', a:['snowflake'] },
+  { n:'BigQuery',          c:'Databases', a:['bigquery','big query'] },
+  { n:'Redis',             c:'Databases', a:['redis'] },
+  { n:'Databricks / Spark',c:'Databases', a:['spark','pyspark','databricks','hadoop','hive'] },
+
+  /* Cloud & DevOps */
+  { n:'AWS',               c:'Cloud & DevOps', a:['aws','amazon web services','ec2','s3','lambda','glue','athena'] },
+  { n:'Azure',             c:'Cloud & DevOps', a:['azure','microsoft cloud'] },
+  { n:'Google Cloud',      c:'Cloud & DevOps', a:['gcp','google cloud','google cloud platform'] },
+  { n:'Docker',            c:'Cloud & DevOps', a:['docker','containers','containerization'] },
+  { n:'Kubernetes',        c:'Cloud & DevOps', a:['kubernetes','k8s'] },
+  { n:'CI/CD',             c:'Cloud & DevOps', a:['ci cd','cicd','continuous integration','continuous delivery','continuous deployment','github actions','jenkins','gitlab ci'] },
+  { n:'Git',               c:'Cloud & DevOps', a:['git','github','gitlab','bitbucket','version control'] },
+  { n:'Linux',             c:'Cloud & DevOps', a:['linux','unix','ubuntu'] },
+  { n:'Terraform',         c:'Cloud & DevOps', a:['terraform','infrastructure as code','ansible'] },
+
+  /* Engineering */
+  { n:'React',             c:'Engineering', a:['react','reactjs','react js','next js','nextjs'] },
+  { n:'Node.js',           c:'Engineering', a:['node js','nodejs','express','express js'] },
+  { n:'Django',            c:'Engineering', a:['django'] },
+  { n:'Flask / FastAPI',   c:'Engineering', a:['flask','fastapi','fast api'] },
+  { n:'Streamlit',         c:'Engineering', a:['streamlit','gradio','shiny'] },
+  { n:'REST APIs',         c:'Engineering', a:['rest api','rest apis','restful','api development','graphql','api integration'] },
+  { n:'HTML / CSS',        c:'Engineering', a:['html','css','html css','sass','tailwind'] },
+  { n:'Automation / scripting', c:'Engineering', a:['automation','scripting','web scraping','scraping','selenium','rpa'] },
+
+  /* Tools & Workflow */
+  { n:'Jira',              c:'Tools & Workflow', a:['jira','confluence','atlassian'] },
+  { n:'Salesforce / CRM',  c:'Tools & Workflow', a:['salesforce','crm','hubspot'] },
+  { n:'Google Analytics',  c:'Tools & Workflow', a:['google analytics','ga4','web analytics','mixpanel','amplitude'] },
+  { n:'Figma',             c:'Tools & Workflow', a:['figma','sketch','adobe xd'] },
+  { n:'Notion',            c:'Tools & Workflow', a:['notion','obsidian'] },
+  { n:'SAP / ERP',         c:'Tools & Workflow', a:['sap','erp','netsuite','oracle erp'] },
+  { n:'Alteryx',           c:'Tools & Workflow', a:['alteryx','knime','sas','spss'] },
+
+  /* Soft skills */
+  { n:'Communication',     c:'Soft Skills', a:['communication','communication skills','written communication','verbal communication','interpersonal'] },
+  { n:'Stakeholder management', c:'Soft Skills', a:['stakeholder','stakeholders','stakeholder management','business partners','client facing'] },
+  { n:'Teamwork',          c:'Soft Skills', a:['teamwork','collaboration','collaborative','cross functional','cross-functional'] },
+  { n:'Problem solving',   c:'Soft Skills', a:['problem solving','problem solving skills','troubleshooting','analytical thinking','critical thinking'] },
+  { n:'Presentation',      c:'Soft Skills', a:['presentation','presentations','presenting','public speaking'] },
+  { n:'Leadership',        c:'Soft Skills', a:['leadership','led a team','leading a team','team lead','managed a team','mentoring','mentored'] },
+  { n:'Project management',c:'Soft Skills', a:['project management','managing projects','pmp','roadmap','prioritization'] },
+  { n:'Agile / Scrum',     c:'Soft Skills', a:['agile','scrum','kanban','sprints'] },
+  { n:'Business acumen',   c:'Soft Skills', a:['business acumen','business insight','business impact','domain knowledge'] },
+  { n:'Attention to detail', c:'Soft Skills', a:['attention to detail','detail oriented','detail-oriented'] },
+];
+
+/* ══════════════════════════ text normalization ══════════════════════════ */
+function normalize(text) {
+  return text.toLowerCase()
+    .replace(/\.net\b/g, ' dotnet ')                     // protect .NET
+    .replace(/[‑–—_\/.]/g, ' ')                          // hyphens/slashes/dots → space
+    .replace(/[^a-z0-9+#\n& ]/g, ' ')                    // keep letters, digits, + # & and line breaks
+    .replace(/[ \t]+/g, ' ');
+}
+function escapeRx(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/* Build a global regex for an alias against normalized text */
+function aliasRegex(alias) {
+  const esc = escapeRx(alias);
+  const wordEnd = /[a-z0-9]$/.test(alias) ? 's?\\b' : '(?![a-z0-9])';
+  const wordStart = /^[a-z0-9]/.test(alias) ? '\\b' : '(?<![a-z0-9])';
+  return new RegExp(wordStart + esc + wordEnd, 'g');
+}
+
+const NEG_RE = /\b(no|not|without|none|zero|avoid)\b/;
+const NEG_FILLER = new Set(['experience','experiences','with','in','using','use','of','the','a','an','prior','professional','hands','on','any','real','working','knowledge','familiarity','nor','or','and','but','skills','skill','background','exposure','to']);
+function negatedBefore(text, idx) {
+  if (idx < 2) return false;
+  // look at the current sentence fragment before the match only
+  // (contrast words like “but/later” reset the negation scope)
+  const pre = text.slice(Math.max(0, idx - 70), idx);
+  const seg = pre.split(/[.!?\n;:]|\bbut\b|\bhowever\b|\bthough\b|\blater\b/).pop() || '';
+  const neg = seg.match(NEG_RE);
+  if (!neg) return false;
+  // negated only if few meaningful words sit between the negator and the skill
+  const between = seg.slice(neg.index + neg[0].length).trim();
+  const words = between.split(/\s+/).filter(w => w && !NEG_FILLER.has(w));
+  return words.length <= 3;
+}
+
+/* ══════════════════════════ matching engine ══════════════════════════ */
+/* Returns Map skillName -> { freq, lines:Set, negated } */
+function scanSkills(rawText) {
+  const norm = normalize(rawText);
+  const normLines = norm.split('\n');
+  const lineOf = idx => {
+    let n = 0;
+    for (let i = 0; i < idx; i++) if (norm[i] === '\n') n++;
+    return n;
+  };
+  const results = new Map();
+  const bump = (skill, idx, delta = 1) => {
+    if (negatedBefore(norm, idx)) return;
+    let r = results.get(skill.n);
+    if (!r) { r = { freq: 0, lines: new Set() }; results.set(skill.n, r); }
+    r.freq += delta;
+    r.lines.add(lineOf(idx));
+  };
+
+  for (const skill of SKILLS) {
+    if (skill.a) {
+      for (const alias of skill.a) {
+        const rx = aliasRegex(alias);
+        let m;
+        while ((m = rx.exec(norm)) !== null) bump(skill, m.index);
+        if (rx.lastIndex) rx.lastIndex = 0;
+      }
+    }
+    if (skill.rx) {
+      // run custom patterns on normalized text too (they are written \b-based; fine)
+      for (const rx0 of skill.rx) {
+        const rx = new RegExp(rx0.source, 'gi');
+        let m;
+        while ((m = rx.exec(norm)) !== null) bump(skill, m.index);
+      }
+    }
+  }
+  return { results, normLines };
+}
+
+/* JD line classification: 0 normal, 1 required, 2 nice-to-have */
+const REQ_HEADER = /(requirements|required qualifications|must[- ]have|minimum qualifications|basic qualifications|essential|what you.ll bring|qualifications|about you|what we.re looking for)/i;
+const NICE_HEADER = /(nice[- ]to[- ]have|preferred qualifications|bonus points|desirable|good to have)/i;
+const OTHER_HEADER = /(responsibilit|about (us|the (company|team|role))|benefits|perks|duties|what you.ll do|who we are|our team|company|overview|job (summary|description|title)|role|location|salary|how to apply|the opportunity)/i;
+
+function classifyJdLines(lines) {
+  const flags = [];
+  let mode = 0, countdown = 0;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { mode = 0; countdown = 0; flags.push(0); continue; }
+    const headerish = /:$/.test(line) || line.length < 70;
+    if (headerish && NICE_HEADER.test(line)) { mode = 2; countdown = 6; flags.push(2); continue; }
+    if (headerish && REQ_HEADER.test(line))  { mode = 1; countdown = 8; flags.push(1); continue; }
+    if (headerish && OTHER_HEADER.test(line)) { mode = 0; countdown = 0; flags.push(0); continue; }
+    if (mode) { if (countdown > 0) countdown--; else mode = 0; }
+    let f = mode;
+    if (/\b(required|must have|must-have|minimum)\b/i.test(line)) f = 1;
+    else if (/\b(nice[- ]to[- ]have|preferred|bonus|a plus|plus)\b/i.test(line) && f !== 1) f = 2;
+    flags.push(f);
+  }
+  return flags;
+}
+
+function isSkillsHeaderLine(line) {
+  return /^(technical\s+)?(skills|technolog(y|ies)|tools( &| and)? (technolog(y|ies)|software)|core competencies|stack|proficiencies)\s*[:\-–—]/i.test(line.trim());
+}
+
+/* ══════════════════════════ analysis ══════════════════════════ */
+function analyze(resumeRaw, jdRaw) {
+  const res = scanSkills(resumeRaw);
+  const jd  = scanSkills(jdRaw);
+  const jdFlags = classifyJdLines(jd.normLines);
+
+  // skills-section bonus for the resume
+  const skillsSectionLines = new Set();
+  res.normLines.forEach((l, i) => { if (isSkillsHeaderLine(l)) skillsSectionLines.add(i); });
+
+  const byName = new Map(SKILLS.map(s => [s.n, s]));
+
+  // JD skill list with importance
+  const jdSkills = [];
+  for (const [name, r] of jd.results) {
+    let flag = 0;
+    for (const ln of r.lines) flag = Math.max(flag, jdFlags[ln] || 0);
+    const importance = flag === 1 ? 1.25 : flag === 2 ? 0.6 : 1.0;
+    jdSkills.push({ name, cat: byName.get(name).c, freq: r.freq, flag, importance });
+  }
+  jdSkills.sort((a, b) => (b.importance * b.freq) - (a.importance * a.freq));
+
+  // resume side: weight per skill
+  const resWeight = new Map();
+  for (const [name, r] of res.results) {
+    const inSkillsSec = [...r.lines].some(ln => skillsSectionLines.has(ln));
+    const w = 1 + 0.25 * Math.min(Math.max(r.freq - 1, 0), 3) + (inSkillsSec ? 0.4 : 0);
+    resWeight.set(name, { weight: w, freq: r.freq });
+  }
+
+  const matched = [], missing = [], transfer = [];
+  for (const j of jdSkills) {
+    const rw = resWeight.get(j.name);
+    if (rw) matched.push({ ...j, resFreq: rw.freq, weight: rw.weight });
+    else {
+      // transferable: another skill the user has in the same category
+      const from = [...resWeight.keys()].map(n => byName.get(n)).find(s => s && s.c === j.cat);
+      (from ? transfer : missing).push({ ...j, from: from ? from.n : null });
+    }
+  }
+
+  // score — soft-skill gaps are damped: they matter, but hard skills decide
+  const damp = m => (m.cat === 'Soft Skills' ? 0.6 : 1);
+  const covered = matched.reduce((s, m) => s + m.weight, 0);
+  const gap = missing.reduce((s, m) => s + m.importance * damp(m), 0)
+            + transfer.reduce((s, m) => s + m.importance * 0.35, 0); // transferables only mildly count against
+  let score = (covered + gap) > 0 ? Math.round(100 * covered / (covered + gap)) : 0;
+  score = Math.max(3, Math.min(99, score));
+
+  return { score, matched, missing, transfer, jdSkills };
+}
+
+/* ══════════════════════════ suggestions ══════════════════════════ */
+function buildSuggestions(resumeRaw, jdRaw, out) {
+  const s = [];
+  const reqMissing = out.missing.filter(m => m.importance >= 1.25);
+  const niceMissing = out.missing.filter(m => m.importance < 1.25 && m.importance >= 1);
+  const reqMissingTop = [...reqMissing].sort((a, b) => b.freq - a.freq).slice(0, 3);
+
+  for (const m of reqMissingTop) {
+    s.push({ ico: '➕', html: `Add <b>${esc(m.name)}</b> to your resume — it’s core to this role${m.freq > 1 ? ` (mentioned ${m.freq}× in the posting, listed as required)` : ' and listed as required'}.` });
+  }
+  for (const m of niceMissing.slice(0, 2)) {
+    const why = m.flag === 2 ? 'only a nice-to-have here' : 'mentioned in passing, not listed as a hard requirement';
+    s.push({ ico: '🌙', html: `<b>${esc(m.name)}</b> is ${why} — mention any related exposure if you have it, but don’t sweat it.` });
+  }
+
+  // JD stresses a skill the resume barely mentions
+  for (const m of out.matched.filter(m => m.freq >= 3 && m.resFreq <= 1).slice(0, 2)) {
+    s.push({ ico: '📈', html: `The job leans hard on <b>${esc(m.name)}</b> (${m.freq} mentions) but your resume touches it once — add a bullet or project that shows it in action.` });
+  }
+
+  // transferable bridges
+  for (const t of out.transfer.slice(0, 2)) {
+    s.push({ ico: '🔁', html: `Bridge from <b>${esc(t.from)}</b>: you already work with ${esc(t.from)}, so <b>${esc(t.name)}</b> should feel familiar — say so explicitly.` });
+  }
+
+  // soft skills missing
+  const soft = out.missing.filter(m => m.cat === 'Soft Skills').slice(0, 3);
+  if (soft.length >= 2) {
+    s.push({ ico: '🗣️', html: `Weave the soft skills they name (${soft.map(x => esc(x.name)).join(', ')}) into your <b>experience bullets</b> — e.g. “presented findings to stakeholders” — not just a skills list.` });
+  }
+
+  // quantification
+  const quant = /\d\s?%|\$\s?\d|\b\d+\s?(k|m|million|billion)\b|\b\d+x\b|\b\d{2,}\+?\s?(users|customers|clients|records|rows|hours|hours saved|projects|reports)\b/i.test(resumeRaw);
+  if (!quant) {
+    s.push({ ico: '🔢', html: `Quantify 2–3 achievements with numbers — <b>“cut report time 40%”</b> beats “improved reporting” for both humans and ATS.` });
+  }
+
+  // tailor headline
+  if (out.score >= 78) {
+    const title = (jdRaw.split('\n').find(l => l.trim().length > 8) || '').trim().slice(0, 60);
+    s.push({ ico: '⭐', html: `Strong match — mirror the posting’s exact job title in your headline/summary${title ? ` (e.g. “${esc(title)}”)` : ''} and apply today.` });
+  }
+
+  // ATS phrasing
+  const sample = (out.missing[0] || out.transfer[0]);
+  if (sample) {
+    s.push({ ico: '🤖', html: `Mirror the posting’s exact wording — write <b>${esc(sample.name)}</b> the way they do, so keyword filters pick it up.` });
+  }
+
+  return s.slice(0, 6);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+/* ══════════════════════════ rendering ══════════════════════════ */
+const $ = id => document.getElementById(id);
+const resumeEl = $('resumeText'), jdEl = $('jdText');
+const resultsEl = $('results'), formNote = $('formNote');
+
+function verdictFor(score) {
+  if (score >= 80) return ['Strong match 🎉', 'You check most of their boxes. Tailor the wording and apply.'];
+  if (score >= 60) return ['Good match 👍', 'Solid overlap — close the gaps below and your odds jump.'];
+  if (score >= 40) return ['Partial match 🤔', 'Worth applying if you can reframe existing experience toward their keywords.'];
+  return ['Stretch 🧗', 'Big gaps — consider upskilling on the missing requirements or targeting a closer role.'];
+}
+function ringColor(score) {
+  if (score >= 80) return 'var(--ok)';
+  if (score >= 60) return 'var(--accent)';
+  if (score >= 40) return 'var(--warn)';
+  return 'var(--danger)';
+}
+
+const CIRC = 2 * Math.PI * 56;
+let scoreAnim = null;
+function animateScore(target) {
+  if (scoreAnim) cancelAnimationFrame(scoreAnim);
+  const num = $('scoreNum'), ring = $('ring'), t0 = performance.now(), dur = 1000;
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  const step = now => {
+    const p = Math.min((now - t0) / dur, 1);
+    const v = Math.round(target * ease(p));
+    num.innerHTML = v + '<small>%</small>';
+    ring.style.strokeDashoffset = (CIRC * (1 - (target * ease(p)) / 100)).toFixed(1);
+    if (p < 1) scoreAnim = requestAnimationFrame(step);
+  };
+  ring.style.stroke = ringColor(target);
+  scoreAnim = requestAnimationFrame(step);
+}
+
+function chipHtml(cls, name, extra) {
+  return `<span class="chip ${cls}">${esc(name)}${extra || ''}</span>`;
+}
+
+function render(out) {
+  resultsEl.hidden = false;
+  animateScore(out.score);
+  const [v, vs] = verdictFor(out.score);
+  $('verdict').textContent = v;
+  $('verdictSub').textContent = vs;
+  $('statMatched').textContent = out.matched.length;
+  $('statMissing').textContent = out.missing.length;
+  $('statTransfer').textContent = out.transfer.length;
+
+  $('matchedChips').innerHTML = out.matched.length
+    ? out.matched.map(m => chipHtml('ok', m.name, m.resFreq > 1 ? `<em>×${m.resFreq}</em>` : '')).join('')
+    : '<span class="none">nothing matched — try naming tools explicitly</span>';
+
+  $('missingChips').innerHTML = out.missing.length
+    ? out.missing.map(m => chipHtml('warn', m.name, m.flag === 1 ? '<span class="tag">required</span>' : m.flag === 2 ? '<span class="tag">nice to have</span>' : '')).join('')
+    : '<span class="none">none — you cover everything they asked for 🎉</span>';
+
+  $('transferChips').innerHTML = out.transfer.length
+    ? out.transfer.map(t => chipHtml('info', t.name, `<em>via ${esc(t.from)}</em>`)).join('')
+    : '<span class="none">no obvious adjacent skills</span>';
+
+  const sugs = buildSuggestions(resumeEl.value, jdEl.value, out);
+  $('sugList').innerHTML = sugs.length
+    ? sugs.map(s => `<li><span class="ico">${s.ico}</span><span>${s.html}</span></li>`).join('')
+    : '<li><span class="ico">🤷</span><span>No specific suggestions — the texts are too short to analyze meaningfully.</span></li>';
+
+  const maxFreq = Math.max(1, ...out.jdSkills.map(s => s.freq));
+  $('brows').innerHTML = out.jdSkills.map(s => {
+    const state = out.matched.find(m => m.name === s.name) ? ['ok', '✓ in resume']
+      : out.transfer.find(t => t.name === s.name) ? ['info', '≈ adjacent']
+      : ['warn', '✗ missing'];
+    return `<div class="brow">
+      <span class="bname" title="${esc(s.name)} · ${esc(s.cat)}">${esc(s.name)}</span>
+      <span class="bbar"><i style="width:${Math.round(100 * s.freq / maxFreq)}%"></i></span>
+      <span class="bfreq">${s.freq}×</span>
+      <span class="bstate ${state[0]}">${state[1]}</span>
+    </div>`;
+  }).join('') || '<span class="none">No known skills detected in the job description.</span>';
+
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ══════════════════════════ wiring ══════════════════════════ */
+const LS_KEY = 'resume-match-v1';
+function persist() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ r: resumeEl.value, j: jdEl.value })); } catch {}
+}
+function restore() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (d.r) resumeEl.value = d.r;
+    if (d.j) jdEl.value = d.j;
+  } catch {}
+}
+
+function updateCounts() {
+  $('resumeCount').textContent = resumeEl.value.length.toLocaleString() + ' chars';
+  $('jdCount').textContent = jdEl.value.length.toLocaleString() + ' chars';
+}
+
+function analyzeNow() {
+  formNote.textContent = '';
+  if (!resumeEl.value.trim() || !jdEl.value.trim()) {
+    formNote.textContent = '⚠️ Both boxes need content — paste your resume and the job description.';
+    return;
+  }
+  const out = analyze(resumeEl.value, jdEl.value);
+  if (!out.jdSkills.length) {
+    formNote.textContent = '⚠️ No recognizable skills in the job description — try pasting the full posting.';
+    resultsEl.hidden = true;
+    return;
+  }
+  persist();
+  render(out);
+}
+
+$('analyzeBtn').addEventListener('click', analyzeNow);
+$('sampleBtn').addEventListener('click', () => {
+  resumeEl.value = SAMPLE_RESUME; jdEl.value = SAMPLE_JD;
+  updateCounts(); persist(); analyzeNow();
+});
+$('resetBtn').addEventListener('click', () => {
+  resumeEl.value = ''; jdEl.value = '';
+  updateCounts(); resultsEl.hidden = true; formNote.textContent = ''; persist();
+});
+$('clearResume').addEventListener('click', () => { resumeEl.value = ''; updateCounts(); persist(); });
+$('clearJd').addEventListener('click', () => { jdEl.value = ''; updateCounts(); persist(); });
+
+[resumeEl, jdEl].forEach(el => el.addEventListener('input', () => { updateCounts(); persist(); }));
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); analyzeNow(); }
+});
+
+/* ── file upload: txt/md direct, pdf via pdf.js ── */
+async function ensurePdfJs() {
+  if (window.pdfjsLib) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('pdfjs-load-failed'));
+    document.head.appendChild(s);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+async function extractFile(file) {
+  const name = file.name.toLowerCase();
+  if (/\.(txt|md|markdown|csv|json|html?)$/.test(name) || file.type.startsWith('text/')) {
+    return await file.text();
+  }
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    await ensurePdfJs();
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join(' ') + '\n\n';
+    }
+    return text.trim();
+  }
+  throw new Error('Unsupported file type — .txt, .md and .pdf work best. For .docx, copy-paste the text.');
+}
+
+function wireUpload(panel, btnId, inputId, target) {
+  const input = $(inputId);
+  $(btnId).addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    formNote.textContent = `⏳ Reading ${file.name}…`;
+    try {
+      target.value = await extractFile(file);
+      formNote.textContent = '';
+      updateCounts(); persist(); analyzeNow();
+    } catch (err) {
+      formNote.textContent = '⚠️ ' + (err.message === 'pdfjs-load-failed'
+        ? 'Couldn’t load the PDF reader (offline?) — paste the text instead.'
+        : err.message);
+    }
+    input.value = '';
+  });
+  ['dragover', 'dragenter'].forEach(ev => panel.addEventListener(ev, e => {
+    e.preventDefault(); panel.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => panel.addEventListener(ev, e => {
+    e.preventDefault(); panel.classList.remove('dragover');
+  }));
+  panel.addEventListener('drop', async e => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    formNote.textContent = `⏳ Reading ${file.name}…`;
+    try {
+      target.value = await extractFile(file);
+      formNote.textContent = '';
+      updateCounts(); persist(); analyzeNow();
+    } catch (err) {
+      formNote.textContent = '⚠️ ' + err.message;
+    }
+  });
+}
+wireUpload($('panelResume'), 'loadResumeFile', 'resumeFile', resumeEl);
+wireUpload($('panelJd'), 'loadJdFile', 'jdFile', jdEl);
+
+/* ══════════════════════════ sample data ══════════════════════════ */
+const SAMPLE_RESUME = `JORDAN SMITH
+Data Analyst
+
+SUMMARY
+Data analyst with 3 years of experience turning messy data into decisions.
+
+SKILLS
+Python, SQL, Pandas, Machine Learning, Excel, Matplotlib
+
+EXPERIENCE
+Data Analyst — Acme Retail (2022–present)
+- Built weekly sales reports in Excel for 4 regional teams
+- Wrote Python scripts with Pandas to clean 200k-row transaction exports
+- Trained a machine learning model (scikit-learn) to forecast demand, cutting stockouts 18%
+- Wrote SQL queries against the Postgres warehouse
+
+EDUCATION
+B.S. Statistics, State University, 2021`;
+
+const SAMPLE_JD = `Data Analyst
+
+We are looking for a Data Analyst who has experience
+with SQL, Python, Power BI, Excel, and data visualization. You will
+build dashboards, partner with stakeholders, and present insights
+to leadership.
+
+Requirements:
+- 2+ years of professional experience with SQL and Python
+- Must have strong communication and presentation skills
+- Experience with data visualization and reporting
+- Nice to have: Tableau, cloud experience (AWS)
+
+Benefits: great team, flexible hours.`;
+
+/* ══════════════════════════ boot ══════════════════════════ */
+restore();
+updateCounts();
+if (resumeEl.value.trim() && jdEl.value.trim()) analyzeNow();
+</script>
+</body>
+</html>
