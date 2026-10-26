@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>YEG Roads — Edmonton explorer</title>
+<title>Roads explorer</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#0b0e1a">
-<meta name="description" content="Explore Edmonton street by street: roads light up as you travel them.">
+<meta name="description" content="Explore any city street by street: roads light up as you travel them.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="YEG Roads">
+<meta name="apple-mobile-web-app-title" content="Roads">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.min.css">
 <style>
   :root {
@@ -48,7 +48,15 @@
   .topbar .brand { display: flex; align-items: baseline; gap: 10px; }
   .topbar .brand a { color: var(--text); text-decoration: none; font-size: 17px; font-weight: 700; }
   .topbar .brand a:hover { color: var(--accent); }
-  .topbar .brand .sub { font-size: 11px; color: var(--text-dim); }
+  .city-btn {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    font-size: 13.5px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: border-color .15s, background .15s;
+  }
+  .city-btn:hover { border-color: var(--accent); background: var(--card-hover); }
+  .city-btn .pin { color: var(--accent); margin-right: 6px; }
+  #loadState { font-size: 11px; color: var(--text-dim); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pct-wrap { display: flex; align-items: center; gap: 10px; margin-left: auto; }
   .pct { font-size: 26px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; text-shadow: 0 0 18px var(--accent-soft); }
   .pct small { font-size: 11px; font-weight: 500; color: var(--text-dim); margin-left: 4px; }
@@ -64,13 +72,12 @@
   .tbtn.on {
     background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
   }
+  .tbtn.on:disabled, .tbtn:disabled { opacity: .5; cursor: not-allowed; }
   .tbtn .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; vertical-align: 1px; }
   .tbtn.on .dot { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
-  .tbtn.load { color: var(--text-dim); }
-  .tbtn.load.loading::after { content: "…"; }
 
   /* ── map ────────────────────────────────────────────── */
-  #map { flex: 1; background: #0b0e1a; outline: none; }
+  #map { flex: 1; background: #0b0e1a; outline: none; position: relative; }
   .leaflet-container { background: #0b0e1a; font-family: inherit; }
   .leaflet-control-zoom a {
     background: #131725 !important; color: #e8eaf0 !important; border-color: rgba(255,255,255,.12) !important;
@@ -87,10 +94,40 @@
     transform: translate(-50%, -50%); position: absolute;
   }
   .leaf-div { background: none; border: none; }
-  /* POI marker: tinted dot */
-  .poi-dot { }
 
-  /* ── stats panel (folds on map) ─────────────────────── */
+  /* ── empty state / gate ─────────────────────────────── */
+  .gate {
+    position: absolute; inset: 0; z-index: 2000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: radial-gradient(60% 45% at 25% 10%, rgba(90,120,255,.14), transparent 70%),
+                radial-gradient(50% 40% at 75% 90%, rgba(180,90,255,.10), transparent 70%),
+                var(--bg);
+    text-align: center; padding: 24px;
+  }
+  .gate[hidden] { display: none; }
+  .gate .big { font-size: 52px; }
+  .gate h1 { font-size: 24px; font-weight: 700; letter-spacing: -.3px; }
+  .gate p { color: var(--text-dim); font-size: 14px; max-width: 420px; line-height: 1.6; }
+  .gate-search { display: flex; gap: 8px; width: min(460px, 92vw); margin-top: 6px; }
+  .gate-search input {
+    flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--text); font-size: 16px; padding: 12px 18px; outline: none;
+  }
+  .gate-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .gate-search button {
+    border: none; background: var(--accent-soft); color: var(--accent); font-weight: 600;
+    font-size: 14px; padding: 0 20px; border-radius: 999px; cursor: pointer;
+  }
+  .gate-saved { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .gate-saved .chipx {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+  }
+  .gate-saved .chipx:hover { border-color: var(--accent); }
+  .gate-status { font-size: 13px; color: var(--text-dim); min-height: 20px; }
+  .gate-status.busy { color: var(--accent); }
+
+  /* ── stats panel ────────────────────────────────────── */
   .stats-card {
     position: fixed; left: 14px; bottom: 14px; z-index: 900;
     width: 232px; max-height: min(64vh, 480px); overflow: auto;
@@ -105,14 +142,12 @@
     border-radius: 999px; padding: 7px 12px; font-size: 12px; cursor: pointer;
   }
   @media (max-width: 720px) {
-    .stats-card {
-      width: calc(100vw - 20px); max-height: 40vh;
-      left: 10px; bottom: 10px;
-    }
+    .stats-card { width: calc(100vw - 20px); max-height: 40vh; left: 10px; bottom: 10px; }
     .stats-card.folded { transform: translateY(calc(100% + 16px)); }
     .stats-toggle { display: block; }
     .pct-bar { width: 26vw; }
     .topbar { padding: 10px 12px; gap: 8px; }
+    .city-btn { max-width: 44vw; }
   }
   .stats-card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-dim); margin-bottom: 10px; display: flex; justify-content: space-between; }
   .stats-card h3 .fold { cursor: pointer; border: none; background: none; color: var(--text-dim); font-size: 13px; }
@@ -125,12 +160,56 @@
   .cls-meta b { color: var(--text); font-weight: 600; }
   .tour-butns { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 
+  /* ── city dialog ────────────────────────────────────── */
+  dialog {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px; width: min(440px, 94vw);
+    box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(3px); }
+  dialog h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+  #citySearch {
+    width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--text); font-size: 15px; padding: 11px 16px; outline: none;
+  }
+  #citySearch:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #cityResults { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow: auto; }
+  .c-res {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px;
+    cursor: pointer; font-size: 13.5px; text-align: left; width: 100%;
+    border: none; background: transparent; color: var(--text);
+  }
+  .c-res:hover { background: var(--card-hover); }
+  .c-res .c-sub { font-size: 11px; color: var(--text-dim); }
+  .c-res .c-badge {
+    margin-left: auto; font-size: 10.5px; color: var(--accent); background: var(--accent-soft);
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+  }
+  .c-res.saved-now { border: 1px dashed var(--accent); }
+  #cityStatus { font-size: 12px; color: var(--text-dim); margin-top: 8px; min-height: 18px; }
+  .c-row-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin: 14px 0 6px; }
+  .saved-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+  .saved-list .s-row {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+    font-size: 13.5px; cursor: pointer; background: transparent; border: none; color: var(--text); width: 100%; text-align: left;
+  }
+  .saved-list .s-row:hover { background: var(--card-hover); }
+  .saved-list .s-row .s-meta { margin-left: auto; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .saved-list .s-del { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px; }
+  .saved-list .s-del:hover { color: var(--danger); }
+  .d-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .btn {
+    border: 1px solid var(--border); background: transparent; color: var(--text);
+    font-size: 13px; padding: 8px 16px; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { background: var(--card-hover); }
+
   /* toasts */
   .toast {
     position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
     background: rgba(20,24,40,.96); border: 1px solid var(--border); color: var(--text);
     padding: 9px 18px; border-radius: 999px; font-size: 13px; z-index: 1200;
-    box-shadow: var(--shadow); transition: opacity .3s, transform .3s;
+    box-shadow: var(--shadow); transition: opacity .3s, transform .3s; max-width: 92vw;
   }
   .toast.err { border-color: var(--danger); color: #ffb0b0; }
   @media (prefers-reduced-motion: reduce) {
@@ -142,20 +221,33 @@
 
 <header class="topbar">
   <div class="brand">
-    <a href="index.html" title="Back to the starter page">✦ YEG Roads</a>
-    <span class="sub" id="loadState">loading map…</span>
+    <a href="index.html" title="Back to the starter page">✦ Roads</a>
+    <button class="city-btn" id="cityBtn" title="Switch city"><span class="pin">📍</span><span id="cityName">Pick a city</span></button>
+    <span id="loadState"></span>
   </div>
   <div class="pct-wrap">
-    <span class="pct" id="pctBig">0.0<small>%</small></span>
+    <span class="pct" id="pctBig">—<small></small></span>
     <div class="pct-bar"><div id="pctBar"></div></div>
   </div>
   <div class="tbtns">
-    <button class="tbtn" id="trackBtn" title="Follow me and mark the roads I drive"><span class="dot"></span>Track me</button>
-    <button class="tbtn" id="locateBtn" title="Center the map on my position">📍</button>
+    <button class="tbtn" id="trackBtn" title="Follow me and mark the roads I drive" disabled><span class="dot"></span>Track me</button>
+    <button class="tbtn" id="locateBtn" title="Center the map on my position" disabled>📍</button>
   </div>
 </header>
 
-<div id="map" role="application" aria-label="Edmonton roads map"></div>
+<div id="map" role="application" aria-label="City roads map">
+  <div class="gate" id="gate">
+    <div class="big">🗺️</div>
+    <h1>Which city do you want to explore?</h1>
+    <p>Type any city in the world — the whole city's streets are pulled from OpenStreetMap and light up as you drive them.</p>
+    <form class="gate-search" id="gateForm">
+      <input id="gateInput" type="text" placeholder="e.g. Toronto, Oslo, Nairobi…" autocomplete="off" spellcheck="false">
+      <button type="submit">Find</button>
+    </form>
+    <div class="gate-saved" id="gateSaved"></div>
+    <div class="gate-status" id="gateStatus"></div>
+  </div>
+</div>
 
 <button class="stats-toggle" id="statsOpen" hidden>📈 Show stats</button>
 
@@ -164,28 +256,37 @@
   <div class="cls-rows" id="clsRows"></div>
   <div class="cls-meta" id="clsMeta"></div>
   <div class="tour-butns">
-    <button class="tbtn" id="fitBtn" title="Fit the whole loaded area in view">⤢ Fit</button>
-    <button class="tbtn" id="resetBtn" title="Erase all tracked roads (cannot be undone)">Reset</button>
+    <button class="tbtn" id="fitBtn" title="Fit the whole loaded area in view" disabled>⤢ Fit</button>
+    <button class="tbtn" id="resetBtn" title="Erase this city's tracked roads (cannot be undone)">Reset city</button>
   </div>
 </aside>
+
+<!-- city switch dialog -->
+<dialog id="cityDialog">
+  <h2>Cities</h2>
+  <input id="citySearch" type="text" placeholder="Search a city — anywhere in the world…" autocomplete="off" spellcheck="false">
+  <div id="cityStatus"></div>
+  <div id="cityResults"></div>
+  <div class="c-row-label" id="savedLabel">Saved on this device</div>
+  <div class="saved-list" id="savedList"></div>
+  <div class="d-actions"><button class="btn" id="cityClose">Done</button></div>
+</dialog>
 
 <script src="vendor/leaflet/leaflet.min.js"></script>
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════════════
-   YEG Roads — an Edmonton street-explorer for the starter page.
-
-   Road geometry & places: OpenStreetMap contributors, ODbL
-   (pre-extracted via the Overpass API, committed with the site).
+   Roads — a street-exploration map for the starter page. Any city,
+   fully dynamic: search → OpenStreetMap boundary → Overpass download →
+   packed & cached in IndexedDB → explore, track, persist progress.
+   Map & place data: © OpenStreetMap contributors, ODbL.
    ════════════════════════════════════════════════════════════════════ */
 
-const LS_KEY = 'starter-page-explore-v1';
 const CLASSES = ['motorway','trunk','primary','secondary','tertiary','unclassified','residential'];
 const CLS_LABEL = {
   motorway: 'Freeways', trunk: 'Expressways', primary: 'Arterials',
   secondary: 'Collectors', tertiary: 'Minor', unclassified: 'Unclassified', residential: 'Residential',
 };
-/* base (grey) styles by class */
 const BASE_STYLE = {
   motorway:    { color: '#565c6e', weight: 4.5, opacity: .95 },
   trunk:       { color: '#505564', weight: 4,   opacity: .95 },
@@ -197,21 +298,61 @@ const BASE_STYLE = {
 };
 const EXPLORED_STYLE = { color: '#7aa2ff', opacity: 1 };
 
-const store = loadStore();
-function loadStore() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY)) || { e: {}, trail: [], last: null, updated: 0 }; }
-  catch { return { e: {}, trail: [], last: null, updated: 0 }; }
+/* ── IndexedDB: packed city data + per-city progress ── */
+let idbPromise = null;
+function idb() {
+  if (idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject) => {
+    const rq = indexedDB.open('roads-explorer', 1);
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains('cities')) db.createObjectStore('cities');
+      if (!db.objectStoreNames.contains('progress')) db.createObjectStore('progress');
+    };
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+  return idbPromise;
 }
-function saveStore() {
-  store.updated = Date.now();
-  try { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
-  catch { /* full — try again without the trail */
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ e: store.e, trail: [], last: store.last, updated: store.updated })); } catch {}
-  }
+async function idbPut(store, key, val) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put(val, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function idbGet(store, key) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction(store, 'readonly'); const rq = tx.objectStore(store).get(key); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function idbAllKeys(store) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction(store, 'readonly'); const rq = tx.objectStore(store).getAllKeys(); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function idbDel(store, key) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+
+/* ── per-city progress (active working set) ─────────── */
+let prog = { e: {}, trail: [], last: null, updated: 0 };   // current city's tracked state
+let cityKey = null, cityName = null;
+let savingTimer = null;
+function freshProg() { return { e: {}, trail: [], last: null, updated: 0 }; }
+async function loadProg(key) {
+  const p = await idbGet('progress', key);
+  return (p && typeof p === 'object') ? Object.assign(freshProg(), p) : freshProg();
+}
+function saveProgNow() {
+  if (!cityKey) return;
+  prog.updated = Date.now();
+  renderStats();
+  idbPut('progress', cityKey, prog).catch(() => {});
+}
+function saveProgDebounced() { clearTimeout(savingTimer); savingTimer = setTimeout(saveProgNow, 2500); }
+
+/* legacy migration: the pre-multi-city build kept Edmonton in localStorage */
+async function migrateLegacyEdmonton() {
+  try {
+    const raw = localStorage.getItem('starter-page-explore-v1');
+    if (!raw) return;
+    localStorage.removeItem('starter-page-explore-v1');
+    const p = await idbGet('progress', 'edmonton-alberta-canada~legacy');
+    if (p) return;                       // already migrated
+    const old = JSON.parse(raw);
+    await idbPut('progress', 'edmonton-alberta-canada~legacy', {
+      e: old.e || {}, trail: old.trail || [], last: old.last || null, updated: Date.now(),
+    });
+  } catch {}
 }
 
 /* ── map ────────────────────────────────────────────── */
-const map = L.map('map', { zoomSnap: .25, minZoom: 9, maxZoom: 19, zoomControl: true });
+const map = L.map('map', { zoomSnap: .25, minZoom: 8, maxZoom: 19, zoomControl: true });
 map.createPane('paneRiver');    map.getPane('paneRiver').style.zIndex = 401;
 map.createPane('paneRoads');    map.getPane('paneRoads').style.zIndex = 402;
 map.createPane('paneExplored'); map.getPane('paneExplored').style.zIndex = 403;
@@ -227,54 +368,137 @@ const EXP   = new L.Canvas({ pane: 'paneExplored' });
 const TRAIL = new L.Canvas({ pane: 'paneTrail' });
 const POIR  = new L.Canvas({ pane: 'panePOI' });
 
-let roads = null;        // { bbox, classes, ways: {cls: [{i, g}]}, lz: [{cls,id,coords,len}] }
+let roads = null;        // packed roads for the active city
 let wayLayers = null;    // Map wayKey -> L.Polyline
-let exploredLen = {};    // per class, metres
+let exploredLen = {};    // per class, metres (active city)
 let trailLine = null;
 let poiLayer = null, hoodLayer = null, riverLayer = null;
 
 const percentEl = document.getElementById('pctBig');
 const pctBar = document.getElementById('pctBar');
 const loadState = document.getElementById('loadState');
+const gate = document.getElementById('gate');
+const gateStatus = document.getElementById('gateStatus');
 
 function toast(msg, isErr) {
   const el = document.createElement('div');
   el.className = 'toast' + (isErr ? ' err' : '');
   el.textContent = msg;
   document.body.append(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(-8px)'; }, 2600);
-  setTimeout(() => el.remove(), 3100);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(-8px)'; }, 3000);
+  setTimeout(() => el.remove(), 3500);
+}
+function esc(s) { const d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
+
+/* ── layer building (shared by cached & fresh data) ─── */
+function packRoads(rawRoads) {
+  // take a raw Overpass response and produce the compact app format
+  const COS = Math.cos(53.5 * Math.PI / 180); // far-north or far-south cities get slightly off lengths; fine
+  const segLen = (a, b) => {
+    const dx = (b[0] - a[0]) * 111320 * COS, dy = (b[1] - a[1]) * 110540;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  const byClass = {}, totals = {}, bbox = [90, 180, -90, -180];
+  for (const e of (rawRoads.elements || [])) {
+    if (e.type !== 'way' || !e.geometry || e.geometry.length < 2) continue;
+    const cls = e.tags && e.tags.highway;
+    if (!CLASSES.includes(cls)) continue;
+    const pts = e.geometry.map(p => [+p.lon.toFixed(5), +p.lat.toFixed(5)]);
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += segLen(pts[i - 1], pts[i]);
+    if (len < 15) continue;                       // slivers
+    (byClass[cls] = byClass[cls] || []).push({ i: e.id, g: pts });
+    totals[cls] = (totals[cls] || 0) + len;
+    bbox[0] = Math.min(bbox[0], pts[0][1], pts[pts.length - 1][1]);
+    bbox[1] = Math.min(bbox[1], pts[0][0], pts[pts.length - 1][0]);
+    bbox[2] = Math.max(bbox[2], pts[0][1], pts[pts.length - 1][1]);
+    bbox[3] = Math.max(bbox[3], pts[0][0], pts[pts.length - 1][0]);
+  }
+  return {
+    v: 2, bbox: [+bbox[1].toFixed(5), +bbox[0].toFixed(5), +bbox[3].toFixed(5), +bbox[2].toFixed(5)],
+    classes: Object.fromEntries(CLASSES.filter(c => byClass[c]).map(c => [c, { n: byClass[c].length, lenM: Math.round(totals[c]) }])),
+    ways: Object.fromEntries(CLASSES.filter(c => byClass[c]).map(c => [c, byClass[c]])),
+  };
 }
 
-/* ── build layers from data ─────────────────────────── */
-async function fetchJson(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${url}: ${r.status}`);
-  return r.json();
+function packPOIs(raw) {
+  const kindOf = t => {
+    if (t.tourism === 'museum') return 'museum';
+    if (t.tourism === 'artwork') return 'art';
+    if (t.tourism === 'monument') return 'monument';
+    if (t.tourism) return 'attraction';
+    if (t.historic) return 'historic';
+    if (t.amenity === 'hospital') return 'hospital';
+    if (t.amenity === 'university' || t.amenity === 'college') return 'university';
+    if (t.amenity === 'library') return 'library';
+    if (t.amenity === 'marketplace') return 'market';
+    if (t.leisure === 'stadium') return 'stadium';
+    if (t.leisure === 'sports_centre' || t.leisure === 'recreation_ground') return 'sports';
+    return null;
+  };
+  const out = [], seen = new Set();
+  for (const e of (raw.elements || [])) {
+    const t = e.tags || {};
+    const name = t.name;
+    if (!name) continue;
+    const kind = kindOf(t);
+    if (!kind) continue;
+    let lo, la;
+    if (e.type === 'node') { lo = +e.lon.toFixed(5); la = +e.lat.toFixed(5); }
+    else if (e.geometry && e.geometry.length >= 3) {
+      lo = +(e.geometry.reduce((s, p) => s + p.lon, 0) / e.geometry.length).toFixed(5);
+      la = +(e.geometry.reduce((s, p) => s + p.lat, 0) / e.geometry.length).toFixed(5);
+    } else continue;
+    const dedupe = name + '|' + kind + '|' + la.toFixed(3) + '|' + lo.toFixed(3);
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({ n: name, k: kind, lo, la });
+  }
+  return out;
+}
+
+function packExtras(raw) {
+  const rivers = [], hoods = [];
+  for (const e of (raw.elements || [])) {
+    const t = e.tags || {};
+    if (e.type === 'way' && e.geometry && e.geometry.length >= 2 && t.waterway === 'river'
+        && /saskatchewan|/.test(t.name || '')) {   // any river — keep it generic worldwide
+      rivers.push(e.geometry.map(p => [+p.lon.toFixed(5), +p.lat.toFixed(5)]));
+    } else if (e.type === 'node' && t.name && (t.place === 'neighbourhood' || t.place === 'suburb')) {
+      hoods.push({ n: t.name, lo: +e.lon.toFixed(5), la: +e.lat.toFixed(5) });
+    }
+  }
+  return { river: rivers, hoods };
 }
 
 function initLayers(data, label) {
   roads = data;
-  // flatten: simplified coordinate arrays + per-way length
+  // flatten: simplified coordinate arrays + per-way length (matches earlier build)
+  const COSx = Math.cos(53.5 * Math.PI / 180);
+  const segLen = (a, b) => {
+    const dx = (b[0] - a[0]) * 111320 * COSx, dy = (b[1] - a[1]) * 110540;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
   const lz = [];
   for (const cls of CLASSES) {
     const arr = data.ways[cls] || [];
     for (const w of arr) {
       const pts = w.g;
-      // light thinning: drop intermediate points <7 m from the previous one
-      const out = [pts[0]];
-      for (let i = 1; i < pts.length - 1; i++) {
-        const [x1, y1] = out[out.length - 1], [x2, y2] = pts[i];
-        if (Math.abs(x2 - x1) * 1e5 + Math.abs(y2 - y1) * 1e5 >= 0.7) out.push(pts[i]);
+      const outPts = [pts[0]];
+      for (let i = 1; i < pts.length - 1; i++) {   // light thinning
+        const [x1, y1] = outPts[outPts.length - 1], [x2, y2] = pts[i];
+        if (Math.abs(x2 - x1) * 1e5 + Math.abs(y2 - y1) * 1e5 >= 0.7) outPts.push(pts[i]);
       }
-      out.push(pts[pts.length - 1]);
-      lz.push({ cls, id: w.i, coords: out, len: polyLen(out) });
+      outPts.push(pts[pts.length - 1]);
+      let len = 0;
+      for (let i = 1; i < outPts.length; i++) len += segLen(outPts[i - 1], outPts[i]);
+      lz.push({ cls, id: w.i, coords: outPts, len });
     }
   }
   roads.lz = lz;
   buildMatchIndex(lz);
 
-  if (wayLayers) wayLayers.forEach(p => map.removeLayer(p));
+  if (wayLayers) { wayLayers.forEach(p => map.removeLayer(p)); }
   wayLayers = new Map();
   for (const w of lz) {
     const base = Object.assign({}, BASE_STYLE[w.cls]);
@@ -284,36 +508,28 @@ function initLayers(data, label) {
     p.addTo(map);
   }
 
-  // reflect stored exploration
+  // replay this city's stored exploration onto the fresh layers
   exploredLen = {};
-  if (!store.e) store.e = {};
+  const sets = prog.e || {};
   for (const cls of CLASSES) {
-    const set = new Set(store.e[cls] || []);
-    store.e[cls] = [...set];
     exploredLen[cls] = 0;
-    const arr = (roads.ways[cls] || []);
-    const idSet = set;
-    for (const w of arr) {
-      if (idSet.has(w.i)) {
-        exploredLen[cls] += wayLen(cls + ':' + w.i);
-        applyExplored(cls, w.i, true);
+    const set = new Set(sets[cls] || []);
+    for (const w of lz) {
+      if (w.cls === cls && set.has(w.id)) {
+        exploredLen[cls] += w.len;
+        applyExplored(cls, w.id, true);
       }
     }
   }
   if (label) loadState.textContent = label;
   drawTrail();
   renderStats();
-  updateRegionLabel();
+  gate.hidden = true;
+  document.getElementById('trackBtn').disabled = false;
+  document.getElementById('locateBtn').disabled = false;
+  document.getElementById('fitBtn').disabled = false;
 }
-function wayLen(key) {
-  const p = wayLayers && wayLayers.get(key);
-  return p ? p.__yeg.len : 0;
-}
-function polyLen(pts) {
-  let s = 0;
-  for (let i = 1; i < pts.length; i++) s += segLen(pts[i - 1], pts[i]);
-  return s;
-}
+function polyLen(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += segLen(pts[i - 1], pts[i]); return s; }
 const COS = Math.cos(53.5 * Math.PI / 180);
 function segLen(a, b) {
   const dx = (b[0] - a[0]) * 111320 * COS, dy = (b[1] - a[1]) * 110540;
@@ -340,7 +556,6 @@ function buildMatchIndex(lz) {
     }
   }
 }
-/* distance from point (lon, lat) to segment a-b, metres — for match radius */
 function pointSegDist(px, py, a, b) {
   const dx = (b[0] - a[0]) * 111320 * COS, dy = (b[1] - a[1]) * 110540;
   const ex = (px - a[0]) * 111320 * COS, ey = (py - a[1]) * 110540;
@@ -359,7 +574,7 @@ function matchPoint(lon, lat, radiusM) {
     for (const [wi, i, a, b] of bucket) {
       if (pointSegDist(lon, lat, a, b) > radiusM) continue;
       const w = roads.lz[wi];
-      const set = store.e[w.cls] || (store.e[w.cls] = []);
+      const set = prog.e[w.cls] || (prog.e[w.cls] = []);
       if (!set.includes(w.id)) {
         set.push(w.id);
         exploredLen[w.cls] = (exploredLen[w.cls] || 0) + w.len;
@@ -379,7 +594,7 @@ function applyExplored(cls, id, silent) {
 }
 
 /* ── tracking ───────────────────────────────────────── */
-let watchId = null, lastFix = null, savingTimer = null;
+let watchId = null, lastFix = null;
 const trackBtn = document.getElementById('trackBtn');
 
 function toggleTrack() {
@@ -392,56 +607,68 @@ function toggleTrack() {
 function onFix(pos) {
   const { latitude: lat, longitude: lon, accuracy: acc } = pos.coords;
   lastFix = { lat, lon, acc, t: Date.now() };
-  if (acc > 100) return;               // too fuzzy to trust
-  const last = store.trail[store.trail.length - 1];
+  if (acc > 100) return;
+  const last = prog.trail[prog.trail.length - 1];
   const step = last ? segLen([last[1], last[0]], [lon, lat]) : Infinity;
-  if (step < 8) return;                // barely moved — skip
-  store.trail.push([lat, lon]);
-  if (store.trail.length > 2200) store.trail = store.trail.slice(-2000);
-  store.last = { lat, lon, t: Date.now() };
+  if (step < 8) return;                 // barely moved — skip
+  prog.trail.push([lat, lon]);
+  if (prog.trail.length > 2200) prog.trail = prog.trail.slice(-2000);
+  prog.last = { lat, lon, t: Date.now() };
   const newWays = matchPoint(lon, lat, Math.min(60, Math.max(24, acc * 0.9)));
   drawTrail();
   renderStats();
-  if (newWays > 0) { toast(`+${newWays} road${newWays > 1 ? 's' : ''} ✓`); }
-  clearTimeout(savingTimer);
-  savingTimer = setTimeout(saveStore, 2500);
+  if (newWays > 0) { toast(`+${newWays} road${newWays > 1 ? 's' : ''} ✓`); saveProgNow(); }
+  saveProgDebounced();
 }
 function onFixErr(err) {
   if (err && err.code === err.PERMISSION_DENIED) { toggleTrack(); toast('Location blocked — allow it in your browser settings', true); }
   else toast('Waiting for a location fix…');
 }
 function drawTrail() {
-  if (trailLine) trailLine.remove(); trailLine = null;
-  if (!store.trail.length) return;
-  trailLine = L.polyline(store.trail.map(p => p), {
+  if (trailLine) { trailLine.remove(); trailLine = null; }
+  if (!prog.trail.length) return;
+  trailLine = L.polyline(prog.trail.map(p => p), {
     color: '#ffd75e', weight: 2.5, opacity: .75, renderer: TRAIL, pane: 'paneTrail', interactive: false,
   }).addTo(map);
 }
 document.getElementById('locateBtn').addEventListener('click', () => {
   if (lastFix) map.setView([lastFix.lat, lastFix.lon], Math.max(map.getZoom(), 15));
-  else if (!watchId) { toggleTrack(); map.once('moveend', () => {}); }
+  else if (!watchId) toggleTrack();
 });
 
-/* test hook — seed a fake GPS fix (used by tests; harmless in production) */
-window.__yeg = {
+/* test hooks (harmless in production) */
+window.__roads = {
   handlePosition: (lat, lon, acc = 10) => onFix({ coords: { latitude: lat, longitude: lon, accuracy: acc } }),
   stats: () => statsSnapshot(),
-  store,
+  get prog() { return prog; },
+  search: doCitySearch,
+  loadCity: cityFromResult,
+  open: openCity,
+  _packRoads: packRoads,
+  state: () => ({ cityKey, cityName, loading: pipelineBusy, cached: roads ? true : false }),
 };
 
 /* ── stats ──────────────────────────────────────────── */
 function statsSnapshot() {
   const total = roads ? CLASSES.reduce((s, c) => s + (roads.classes[c] ? roads.classes[c].lenM : 0), 0) : 0;
   const done = CLASSES.reduce((s, c) => s + (exploredLen[c] || 0), 0);
-  return { pct: total ? done / total * 100 : 0, done, total, perClass: CLASSES.reduce((o, c) => { o[c] = { done: exploredLen[c] || 0, total: roads && roads.classes[c] ? roads.classes[c].lenM : 0, n: roads && roads.classes[c] ? roads.classes[c].n : 0 }; return o; }, {}), ways: roads ? roads.lz.length : 0 };
+  return {
+    pct: total ? done / total * 100 : 0, done, total,
+    perClass: CLASSES.reduce((o, c) => { o[c] = { done: exploredLen[c] || 0, total: roads && roads.classes[c] ? roads.classes[c].lenM : 0, n: roads && roads.classes[c] ? roads.classes[c].n : 0 }; return o; }, {}),
+    ways: roads ? roads.lz.length : 0,
+  };
 }
 function renderStats() {
   const s = statsSnapshot();
   percentEl.innerHTML = '';
-  percentEl.append((s.pct).toFixed(1) + '%');
+  percentEl.append((roads ? s.pct.toFixed(1) : '—') + '%');
   pctBar.style.width = Math.min(100, s.pct) + '%';
-  // tiny summary for the homepage badge (avoids shipping road totals there)
-  try { localStorage.setItem('starter-page-explore-summary', JSON.stringify({ pct: +s.pct.toFixed(2), km: Math.round(s.total / 1000), touched: CLASSES.reduce((n, c) => n + (store.e && store.e[c] ? store.e[c].length : 0), 0), ways: s.ways, t: Date.now() })); } catch {}
+  // tiny summary for the homepage badge
+  try { localStorage.setItem('starter-page-explore-summary', JSON.stringify({
+    name: cityName || '', cityKey: cityKey || '', pct: +s.pct.toFixed(2),
+    km: Math.round(s.total / 1000), touched: CLASSES.reduce((n, c) => n + (prog.e && prog.e[c] ? prog.e[c].length : 0), 0),
+    ways: s.ways, t: Date.now() })); } catch {}
+  if (!roads) return;
   const rows = document.getElementById('clsRows');
   rows.innerHTML = '';
   for (const cls of CLASSES) {
@@ -453,30 +680,22 @@ function renderStats() {
       `<div class="bar"><div style="width:${pct}%"></div></div>`;
     rows.append(row);
   }
-  const touched = store.e ? CLASSES.reduce((n, c) => n + (store.e[c] ? store.e[c].length : 0), 0) : 0;
-  const last = lastFix ? new Date(lastFix.t || Date.now()) : null;
-  document.getElementById('clsMeta').innerHTML = '';
+  const touched = CLASSES.reduce((n, c) => n + (prog.e[c] ? prog.e[c].length : 0), 0);
   const meta = document.getElementById('clsMeta');
+  meta.innerHTML = '';
   meta.append(
-    el('b', null, `${touched} of ${s.ways}`), ' roads touched',
-    el(null, { br: true }),
-    s.total ? `${(s.total / 1000).toFixed(0)} km of streets mapped · ` : '',
-    store.trail.length ? `track: ${store.trail.length} points` : 'no track yet',
-    last && watchId ? ` · fixing ${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : ''
+    Object.assign(document.createElement('b'), { textContent: `${touched} of ${s.ways}` }),
+    ` roads touched ${document.createElement('br').outerHTML}`,
+    `${(s.total / 1000).toFixed(0)} km of streets · `,
+    prog.trail.length ? `${prog.trail.length} track points` : 'no track yet'
   );
-}
-function el(tag, attrs, text) {
-  const d = document.createElement(tag || 'span');
-  if (attrs && attrs.br) { return document.createElement('br'); }
-  if (text != null) d.textContent = text;
-  return d;
 }
 document.getElementById('fitBtn').addEventListener('click', () => {
   if (roads) map.fitBounds([[roads.bbox[1], roads.bbox[0]], [roads.bbox[3], roads.bbox[2]]]);
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('Erase all tracked roads? This cannot be undone.')) return;
-  store.e = {}; store.trail = []; saveStore();
+  if (!confirm('Erase the roads you explored in ' + (cityName || 'this city') + '? This cannot be undone.')) return;
+  prog.e = {}; prog.trail = []; saveProgNow();
   location.reload();
 });
 document.getElementById('trackBtn').addEventListener('click', toggleTrack);
@@ -488,10 +707,6 @@ document.getElementById('statsOpen').addEventListener('click', () => {
   document.getElementById('statsCard').classList.remove('folded');
   document.getElementById('statsOpen').hidden = true;
 });
-function updateRegionLabel() {
-  const total = statsSnapshot().total / 1000;
-  loadState.title = total.toFixed(0) + ' km of roads loaded';
-}
 
 /* ── landmarks & extras ─────────────────────────────── */
 const POI_ICON = {
@@ -506,7 +721,12 @@ function renderPOIs(pois) {
       radius: 4, color: '#9db4ff', weight: 1, fillColor: '#4d70d8', fillOpacity: .9, renderer: POIR, pane: 'panePOI',
     });
     m.bindTooltip(`${POI_ICON[p.k] || '📍'} ${p.n}`, { direction: 'top', offset: [0, -6], className: 'poi-tip' });
-    m.bindPopup(`<b>${POI_ICON[p.k] || '📍'} ${p.n}</b><br><span style="color:#8a93a6;font-size:11px">${p.k}</span>`);
+    const pop = document.createElement('div');
+    const b = document.createElement('b'); b.textContent = (POI_ICON[p.k] || '📍') + ' ' + p.n;
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#8a93a6;font-size:11px'; sub.textContent = p.k;
+    pop.append(b, sub);
+    m.bindPopup(pop);
     poiLayer.addLayer(m);
   }
 }
@@ -521,44 +741,328 @@ function renderHoods(hoods) {
   if (hoodLayer) hoodLayer.remove();
   hoodLayer = L.layerGroup();
   for (const h of hoods) {
+    const el = document.createElement('div');
+    el.className = 'hood-label';
+    el.textContent = h.n;
     L.marker([h.la, h.lo], {
-      pane: 'paneLabels', icon: L.divIcon({
-        className: 'leaf-div', html: `<div class="hood-label">${h.n}</div>`, iconSize: null,
-      }), interactive: false,
+      pane: 'paneLabels', icon: L.divIcon({ className: 'leaf-div', html: el.outerHTML, iconSize: null }),
+      interactive: false,
     }).addTo(hoodLayer);
   }
-  const zoom = () => { if (map.hasLayer(hoodLayer) && map.getZoom() < 12) map.removeLayer(hoodLayer); else if (!map.hasLayer(hoodLayer) && map.getZoom() >= 12) hoodLayer.addTo(map); };
-  map.on('zoomend', zoom);
-  zoom();
+  const zoomGate = () => {
+    if (map.hasLayer(hoodLayer) && map.getZoom() < 12) map.removeLayer(hoodLayer);
+    else if (!map.hasLayer(hoodLayer) && map.getZoom() >= 12) hoodLayer.addTo(map);
+  };
+  map.on('zoomend', zoomGate);
+  zoomGate();
 }
 
-/* ── boot: load central instantly, full city in background ── */
-(async function boot() {
-  try {
-    const [central, pois, extras] = await Promise.all([
-      fetchJson('data/roads-central.json'), fetchJson('data/pois.json'), fetchJson('data/extras.json'),
-    ]);
-    initLayers(central, 'central core');
-    map.fitBounds([[central.bbox[1], central.bbox[0]], [central.bbox[3], central.bbox[2]]]);
-    renderPOIs(pois.pois);
-    renderRiver(extras.river);
-    renderHoods(extras.hoods);
-    if (store.last) map.setView([store.last.lat, store.last.lon], 15, { animate: false });
-  } catch (e) {
-    loadState.textContent = 'map data failed to load';
-    console.error(e);
+/* ══════════════════ city pipeline ══════════════════ */
+/* Search (Nominatim) → bbox → Overpass fetch (roads count, roads, pois,
+   extras) → pack → cache in IndexedDB → load. Mirrors rotate on failure. */
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
+async function ovQuery(queryText, onStatus) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const url = OVERPASS_MIRRORS[attempt % OVERPASS_MIRRORS.length];
+    try {
+      onStatus && onStatus(`talking to OpenStreetMap (${url.split('/')[2]})…`);
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 420000); // big cities are genuinely big
+      const r = await fetch(url, { method: 'POST', body: queryText, signal: ctl.signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const body = await r.text();
+      if (body.slice(0, 10).toLowerCase().startsWith('<!doctype') || body.includes('<error>')) {
+        throw new Error('Overpass busy');
+      }
+      return JSON.parse(body);
+    } catch (e) {
+      lastErr = e;
+      onStatus && onStatus(`OpenStreetMap is busy — retry ${attempt + 1}/6…`);
+      await new Promise(res => setTimeout(res, 4000 + attempt * 6000));
+    }
   }
-  // full city arrives next; swap seamlessly if it loads
-  fetchJson('data/roads-full.json').then(full => {
-    const keep = store.e; store.e = keep;
-    initLayers(full, 'all Edmonton');
-    toast('Full city loaded — ' + roads.lz.length.toLocaleString() + ' streets');
-  }).catch(() => { loadState.textContent = 'central core (full city failed)'; });
+  throw lastErr || new Error('Overpass unavailable');
+}
+
+
+async function doCitySearch(q, onStatus) {
+  const s = onStatus || (() => {});
+  s('searching cities…');
+  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=en&q=' + encodeURIComponent(q);
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
+  const r = await fetch(url, { signal: ctl.signal, headers: { 'Accept': 'application/json' } });
+  clearTimeout(t);
+  if (!r.ok) throw new Error('search failed: HTTP ' + r.status);
+  const d = await r.json();
+  // prefer real cities first
+  d.sort((a, b) => {
+    const rank = x => (x.type === 'city' || x.type === 'town' || x.type === 'municipality') ? 0
+      : (x.type === 'administrative') ? 1 : 2;
+    return rank(a) - rank(b);
+  });
+  return d.map(r0 => ({
+    key: r0.osm_type + '/' + r0.osm_id,
+    name: (r0.name || (r0.display_name || '').split(',')[0]),
+    sub: (r0.display_name || '').split(',').slice(1, 4).join(',').trim(),
+    bbox: (r0.boundingbox || [0, 0, 0, 0]).map(Number),   // [south, north, west, east]
+    type: r0.type || '',
+  })).filter(c => c.name && c.bbox.length === 4 && c.bbox.every(v => isFinite(v) && v !== 0));
+}
+
+async function cityFromResult(c, onStatus) {
+  const status = onStatus || ((m) => { loadState.textContent = m; });
+  // [south, north, west, east] from Nominatim
+  const [sw_s, sw_n, sw_w, sw_e] = [c.bbox[0], c.bbox[1], c.bbox[2], c.bbox[3]];
+  const countQ = `[out:json][timeout:90];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${sw_s},${sw_w},${sw_n},${sw_e});out count;`;
+  const roadsQ = `[out:json][timeout:420];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${sw_s},${sw_w},${sw_n},${sw_e});out geom;`;
+  const poisQ = `[out:json][timeout:150];(nwr["tourism"~"^(attraction|museum|artwork|monument)$"](${sw_s},${sw_w},${sw_n},${sw_e});nwr["historic"](${sw_s},${sw_w},${sw_n},${sw_e});nwr["amenity"~"^(hospital|university|library|marketplace)$"](${sw_s},${sw_w},${sw_n},${sw_e});nwr["leisure"~"^(stadium|sports_centre|recreation_ground)$"](${sw_s},${sw_w},${sw_n},${sw_e}););out geom;`;
+  const extrasQ = `[out:json][timeout:150];(way["waterway"="river"](${sw_s},${sw_w},${sw_n},${sw_e});node["place"~"^(neighbourhood|suburb)$"](${sw_s},${sw_w},${sw_n},${sw_e}););out geom;`;
+
+  status('checking city size…');
+  const cnt = await ovQuery(countQ, status);
+  const wayCount = (cnt.elements && cnt.elements.find(e => e.type === 'count' && e.tags) || { tags: {} }).tags.ways || 0;
+  const estMB = Math.round(wayCount * 0.9 / 1000 * 10) / 10;
+  if (wayCount > 130000 && !confirm(`${c.name}: ~${wayCount.toLocaleString()} streets (roughly ${estMB} MB to download once, cached afterwards). Continue?`)) {
+    status('cancelled');
+    return null;
+  }
+  status(`downloading ${c.name} (${wayCount.toLocaleString()} streets${estMB ? ', ~' + estMB + ' MB' : ''})…`);
+  const t0 = Date.now();
+  const [rawRoads, rawPois, rawExtras] = await Promise.all([
+    ovQuery(roadsQ, status), ovQuery(poisQ, status), ovQuery(extrasQ, status),
+  ]);
+  const rd = packRoads(rawRoads);
+  const pois = packPOIs(rawPois);
+  const ex = packExtras(rawExtras);
+  const secs = Math.round((Date.now() - t0) / 1000);
+  await idbPut('cities', c.key, { name: c.name, sub: c.sub, rd, pois, ex, updatedAt: Date.now() });
+  status(`${c.name}: ${(JSON.stringify(rd).length / 1e6).toFixed(1)} MB cached · ${rd.lz ? rd.lz.length : Object.values(rd.ways).reduce((n, a) => n + a.length, 0)} streets · ${secs}s`);
+  return { rd, pois, ex };
+}
+
+let pipelineBusy = false;
+async function openCity(c, opts) {
+  if (pipelineBusy) { toast('Still working on ' + currentLoadName + '…'); return; }
+  pipelineBusy = true; currentLoadName = c.name;
+  gateStatus.textContent = '';
+  gateStatus.classList.add('busy');
+  try {
+    // cached copy?
+    let bundle = await idbGet('cities', c.key);
+    if (!bundle) {
+      bundle = (await cityFromResult(c, m => {
+        gate.hidden = true;
+        loadState.textContent = m;
+        gate.hidden = false;
+        gateStatus.textContent = m;
+      })) || null;
+      if (!bundle) { pipelineBusy = false; currentLoadName = ''; return; }
+    }
+    // switch city + progress
+    cityKey = c.key; cityName = bundle.name || c.name;
+    localStorage.setItem('roads-last-city', cityKey);
+    localStorage.setItem('roads-last-city-name', cityName);
+    prog = await loadProg(cityKey);
+    // legacy merge: fold the pre-multi-city Edmonton progress into the real city
+    if (cityKey.startsWith('node/') || cityKey.startsWith('relation/')) {
+      const legacy = await idbGet('progress', 'edmonton-alberta-canada~legacy');
+      if (legacy && /edmonton/i.test(cityName || '')) {
+        for (const cls of CLASSES) {
+          if (legacy.e && legacy.e[cls]) {
+            const set = new Set((prog.e[cls] || []).concat(legacy.e[cls]));
+            prog.e[cls] = [...set];
+          }
+        }
+        if (legacy.trail && legacy.trail.length && !prog.trail.length) prog.trail = legacy.trail;
+      }
+    }
+    if (!opts || !opts.keepView) {
+      map.fitBounds([[bundle.rd.bbox[1], bundle.rd.bbox[0]], [bundle.rd.bbox[3], bundle.rd.bbox[2]]], { animate: false });
+    }
+    if (riverLayer) riverLayer.remove();
+    if (hoodLayer) hoodLayer.remove();
+    initLayers(bundle.rd, cityName);
+    renderPOIs(bundle.pois);
+    renderRiver(bundle.ex.river);
+    renderHoods(bundle.ex.hoods);
+    document.title = `${cityName} — Roads explorer`;
+    document.getElementById('cityName').textContent = cityName;
+    toast(`${cityName} loaded · ${roads ? roads.lz.length.toLocaleString() : '?'} streets`);
+  } catch (e) {
+    console.error(e);
+    gateStatus.classList.remove('busy');
+    gateStatus.textContent = 'That didn\'t work — ' + (e && e.message || 'network hiccup') + '. Try again in a minute.';
+    toast('City download failed — ' + (e && e.message || 'try again'), true);
+  } finally {
+    pipelineBusy = false; currentLoadName = '';
+    gateStatus.classList.remove('busy');
+  }
+}
+let currentLoadName = '';
+
+/* ── city dialog UI ─────────────────────────────────── */
+const cityDialog = document.getElementById('cityDialog');
+document.getElementById('cityBtn').addEventListener('click', openCityDialog);
+document.getElementById('cityClose').addEventListener('click', () => cityDialog.close());
+function openCityDialog() {
+  renderSavedCities();
+  const resEl = document.getElementById('cityResults');
+  resEl.replaceChildren();
+  cityDialog.showModal();
+  document.getElementById('citySearch').focus();
+}
+async function renderSavedCities() {
+  const listEl = document.getElementById('savedList');
+  const keys = await idbAllKeys('cities');
+  listEl.replaceChildren();
+  let progKeys = new Set(await idbAllKeys('progress'));
+  const rows = [];
+  for (const k of keys) {
+    const c = await idbGet('cities', k);
+    if (!c) continue;
+    rows.push({ k, name: c.name, sub: c.sub, streets: (c.rd && c.rd.lz ? c.rd.lz.length : ((c.rd && Object.values(c.rd.ways) || []).reduce((n, a) => n + a.length, 0))),
+      mb: c.rd ? (JSON.stringify(c.rd).length / 1e6) : 0 });
+  }
+  // also progress-only entries (migrated legacy data)
+  for (const k of progKeys) {
+    if (rows.some(r => r.k === k)) continue;
+    rows.push({ k, name: k.startsWith('edmonton') ? 'Edmonton (older progress)' : k, sub: 'progress saved — map not cached', streets: 0, mb: 0 });
+  }
+  const label = document.getElementById('savedLabel');
+  label.textContent = rows.length ? 'Saved on this device' : 'Nothing saved yet';
+  for (const r of rows) {
+    const row = document.createElement('button');
+    row.className = 's-row';
+    const nameSpan = document.createElement('span'); nameSpan.textContent = r.name;
+    const meta = document.createElement('span');
+    meta.className = 's-meta';
+    meta.textContent = r.streets ? `${r.streets.toLocaleString()} streets · ${r.mb.toFixed(1)} MB` : r.sub || '';
+    const del = document.createElement('button');
+    del.className = 's-del'; del.textContent = '🗑'; del.title = 'Delete cached city';
+    del.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Delete ' + r.name + ' from this device (roads + progress)?')) return;
+      await idbDel('cities', r.k); await idbDel('progress', r.k);
+      if (r.k === cityKey) { cityKey = null; cityName = null; localStorage.removeItem('roads-last-city'); }
+      renderSavedCities();
+      toast(r.name + ' deleted');
+    });
+    row.append(nameSpan, meta, del);
+    row.addEventListener('click', async () => {
+      cityDialog.close();
+      // progress rows without cached data can't render a map; only open cached ones
+      const cached = await idbGet('cities', r.k);
+      if (!cached) { toast('Open this via search to re-download the map', true); return; }
+      openCity({ key: r.k, name: r.name, sub: r.sub, bbox: cached.rd.bbox.slice(0, 4) && [cached.rd.bbox[1], cached.rd.bbox[3], cached.rd.bbox[0], cached.rd.bbox[2]] });
+    });
+    listEl.append(row);
+  }
+}
+async function runCitySearch(q, resEl, statusEl) {
+  resEl.replaceChildren();
+  statusEl.textContent = 'searching…';
+  try {
+    const results = await doCitySearch(q);
+    statusEl.textContent = results.length ? 'Pick one:' : 'No matches — try another spelling or add the country.';
+    for (const c of results) {
+      const row = document.createElement('button');
+      row.className = 'c-res' + ((await idbGet('cities', c.key)) ? ' saved-now' : '');
+      const main = document.createElement('span'); main.textContent = c.name;
+      const sub = document.createElement('span'); sub.className = 'c-sub'; sub.textContent = c.sub || c.type;
+      const badge = document.createElement('span');
+      badge.className = 'c-badge';
+      badge.textContent = (await idbGet('cities', c.key)) ? 'saved' : 'download';
+      row.append(main, sub, badge);
+      row.addEventListener('click', async () => {
+        cityDialog.close();
+        gate.hidden = false;
+        openCity(c);
+      });
+      resEl.append(row);
+    }
+  } catch (e) {
+    statusEl.textContent = 'Search failed — ' + (e && e.message || 'network error') + '.';
+  }
+}
+document.getElementById('citySearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); const q = e.target.value.trim(); if (q) runCitySearch(q, document.getElementById('cityResults'), document.getElementById('cityStatus')); }
+});
+document.getElementById('gateForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = document.getElementById('gateInput').value.trim();
+  if (!q) return;
+  gateStatus.classList.add('busy');
+  gateStatus.textContent = 'searching…';
+  try {
+    const results = await doCitySearch(q);
+    gateStatus.classList.remove('busy');
+    const saved = document.getElementById('gateSaved');
+    saved.replaceChildren();
+    if (!results.length) { gateStatus.textContent = 'No matches — try another spelling or add the country.'; return; }
+    gateStatus.textContent = 'Top ' + Math.min(results.length, 4) + ' — pick one:';
+    for (const c of results.slice(0, 4)) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chipx';
+      b.textContent = (c.name || '') + ((c.sub || '').length ? ' · ' + c.sub.split(',').slice(-1)[0].trim() : '');
+      b.addEventListener('click', () => { saved.replaceChildren(); openCity(c); });
+      saved.append(b);
+    }
+  } catch (e2) {
+    gateStatus.classList.remove('busy');
+    gateStatus.textContent = 'Search failed — check your connection.';
+  }
+});
+
+/* saved-city chips on the gate */
+async function renderGateSaved() {
+  const saved = document.getElementById('gateSaved');
+  const keys = await idbAllKeys('cities');
+  if (!keys.length) return;
+  saved.replaceChildren();
+  for (const k of keys.slice(0, 8)) {
+    const c = await idbGet('cities', k);
+    if (!c) continue;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chipx';
+    b.textContent = '⚡ ' + c.name;
+    b.addEventListener('click', () => openCity({ key: k, name: c.name, sub: c.sub, bbox: [c.rd.bbox[1], c.rd.bbox[3], c.rd.bbox[0], c.rd.bbox[2]] }));
+    saved.append(b);
+  }
+}
+
+/* ── boot ───────────────────────────────────────────── */
+(async function boot() {
+  await migrateLegacyEdmonton();
+  // remember and reopen the last city, if any
+  const last = localStorage.getItem('roads-last-city');
+  if (last) {
+    cityName = localStorage.getItem('roads-last-city-name') || '';
+    document.getElementById('cityName').textContent = cityName || 'Loading…';
+    const bundle = await idbGet('cities', last);
+    if (bundle) {
+      openCity({ key: last, name: bundle.name, sub: bundle.sub, bbox: [bundle.rd.bbox[1], bundle.rd.bbox[3], bundle.rd.bbox[0], bundle.rd.bbox[2]] });
+      renderGateSaved();
+      return;
+    }
+    // last city's data was deleted from cache — reopen fresh
+    document.getElementById('cityName').textContent = 'Pick a city';
+  }
+  gate.hidden = false;
+  await renderGateSaved();
+  document.getElementById('gateInput').focus();
 })();
 
 /* flush pending state when closing */
-window.addEventListener('beforeunload', saveStore);
-document.addEventListener('visibilitychange', () => { if (document.hidden) saveStore(); });
+window.addEventListener('beforeunload', saveProgNow);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveProgNow(); });
 
 /* register the service worker (inherits the starter page's PWA) */
 const secureEnough = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
