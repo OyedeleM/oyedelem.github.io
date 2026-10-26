@@ -1,10 +1,13 @@
 /* Starter page service worker: offline-first app shell, network-first weather. */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL_CACHE = `shell-${VERSION}`;
 const WX_CACHE = `weather-${VERSION}`;
 const SHELL_ASSETS = [
   './',
   './index.html',
+  './explore.html',
+  './vendor/leaflet/leaflet.min.js',
+  './vendor/leaflet/leaflet.min.css',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>YEG Roads — Edmonton explorer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="description" content="Explore Edmonton street by street: roads light up as you travel them.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="YEG Roads">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.min.css">
+<style>
+  :root {
+    --radius: 16px;
+    --card: rgba(255,255,255,.055);
+    --card-hover: rgba(255,255,255,.09);
+    --border: rgba(255,255,255,.10);
+    --text: #e8eaf0;
+    --text-dim: #9aa1b2;
+    --accent: #7aa2ff;
+    --accent-soft: rgba(122,162,255,.14);
+    --danger: #ff6b6b;
+    --shadow: 0 8px 32px rgba(0,0,0,.35);
+    --gold: #ffd75e;
+    --bg: #0b0e1a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+    height: 100dvh; overflow: hidden;
+  }
+
+  /* ── top bar ────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    background: rgba(11,14,26,.92); backdrop-filter: blur(10px);
+    z-index: 1000;
+  }
+  .topbar .brand { display: flex; align-items: baseline; gap: 10px; }
+  .topbar .brand a { color: var(--text); text-decoration: none; font-size: 17px; font-weight: 700; }
+  .topbar .brand a:hover { color: var(--accent); }
+  .topbar .brand .sub { font-size: 11px; color: var(--text-dim); }
+  .pct-wrap { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .pct { font-size: 26px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; text-shadow: 0 0 18px var(--accent-soft); }
+  .pct small { font-size: 11px; font-weight: 500; color: var(--text-dim); margin-left: 4px; }
+  .pct-bar { width: min(180px, 30vw); height: 7px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .pct-bar > div { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #4d70d8, var(--accent)); transition: width .6s ease; }
+  .tbtns { display: flex; gap: 8px; }
+  .tbtn {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    font-size: 13px; padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    transition: border-color .15s, background .15s;
+  }
+  .tbtn:hover { border-color: var(--accent); background: var(--card-hover); }
+  .tbtn.on {
+    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
+  }
+  .tbtn .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; vertical-align: 1px; }
+  .tbtn.on .dot { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
+  .tbtn.load { color: var(--text-dim); }
+  .tbtn.load.loading::after { content: "…"; }
+
+  /* ── map ────────────────────────────────────────────── */
+  #map { flex: 1; background: #0b0e1a; outline: none; }
+  .leaflet-container { background: #0b0e1a; font-family: inherit; }
+  .leaflet-control-zoom a {
+    background: #131725 !important; color: #e8eaf0 !important; border-color: rgba(255,255,255,.12) !important;
+  }
+  .leaflet-control-attribution {
+    background: rgba(11,14,26,.8) !important; color: #6a7386 !important;
+  }
+  .leaflet-control-attribution a { color: #8a93a6 !important; }
+
+  /* neighbourhood labels */
+  .hood-label {
+    color: rgba(232,234,240,.42); font-size: 11px; font-weight: 600; letter-spacing: .4px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.8); white-space: nowrap; text-transform: uppercase;
+    transform: translate(-50%, -50%); position: absolute;
+  }
+  .leaf-div { background: none; border: none; }
+  /* POI marker: tinted dot */
+  .poi-dot { }
+
+  /* ── stats panel (folds on map) ─────────────────────── */
+  .stats-card {
+    position: fixed; left: 14px; bottom: 14px; z-index: 900;
+    width: 232px; max-height: min(64vh, 480px); overflow: auto;
+    background: rgba(11,14,26,.94); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow); backdrop-filter: blur(10px); padding: 12px 14px;
+    transition: transform .25s ease;
+  }
+  .stats-card.folded { transform: translateX(-260px); }
+  .stats-toggle {
+    position: fixed; left: 10px; bottom: 10px; z-index: 901; display: none;
+    border: 1px solid var(--border); background: rgba(11,14,26,.94); color: var(--text);
+    border-radius: 999px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+  }
+  @media (max-width: 720px) {
+    .stats-card {
+      width: calc(100vw - 20px); max-height: 40vh;
+      left: 10px; bottom: 10px;
+    }
+    .stats-card.folded { transform: translateY(calc(100% + 16px)); }
+    .stats-toggle { display: block; }
+    .pct-bar { width: 26vw; }
+    .topbar { padding: 10px 12px; gap: 8px; }
+  }
+  .stats-card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-dim); margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .stats-card h3 .fold { cursor: pointer; border: none; background: none; color: var(--text-dim); font-size: 13px; }
+  .cls-row { margin-bottom: 8px; }
+  .cls-row .head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
+  .cls-row .head .n { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .cls-row .bar { height: 5px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .cls-row .bar > div { height: 100%; background: var(--accent); border-radius: 999px; transition: width .5s ease; }
+  .cls-meta { margin-top: 10px; font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+  .cls-meta b { color: var(--text); font-weight: 600; }
+  .tour-butns { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* toasts */
+  .toast {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,24,40,.96); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 18px; border-radius: 999px; font-size: 13px; z-index: 1200;
+    box-shadow: var(--shadow); transition: opacity .3s, transform .3s;
+  }
+  .toast.err { border-color: var(--danger); color: #ffb0b0; }
+  @media (prefers-reduced-motion: reduce) {
+    .pct-bar > div, .cls-row .bar > div { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="index.html" title="Back to the starter page">✦ YEG Roads</a>
+    <span class="sub" id="loadState">loading map…</span>
+  </div>
+  <div class="pct-wrap">
+    <span class="pct" id="pctBig">0.0<small>%</small></span>
+    <div class="pct-bar"><div id="pctBar"></div></div>
+  </div>
+  <div class="tbtns">
+    <button class="tbtn" id="trackBtn" title="Follow me and mark the roads I drive"><span class="dot"></span>Track me</button>
+    <button class="tbtn" id="locateBtn" title="Center the map on my position">📍</button>
+  </div>
+</header>
+
+<div id="map" role="application" aria-label="Edmonton roads map"></div>
+
+<button class="stats-toggle" id="statsOpen" hidden>📈 Show stats</button>
+
+<aside class="stats-card" id="statsCard">
+  <h3>Exploration <button class="fold" id="statsFold" title="Fold away">▾</button></h3>
+  <div class="cls-rows" id="clsRows"></div>
+  <div class="cls-meta" id="clsMeta"></div>
+  <div class="tour-butns">
+    <button class="tbtn" id="fitBtn" title="Fit the whole loaded area in view">⤢ Fit</button>
+    <button class="tbtn" id="resetBtn" title="Erase all tracked roads (cannot be undone)">Reset</button>
+  </div>
+</aside>
+
+<script src="vendor/leaflet/leaflet.min.js"></script>
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════════
+   YEG Roads — an Edmonton street-explorer for the starter page.
+
+   Road geometry & places: OpenStreetMap contributors, ODbL
+   (pre-extracted via the Overpass API, committed with the site).
+   ════════════════════════════════════════════════════════════════════ */
+
+const LS_KEY = 'starter-page-explore-v1';
+const CLASSES = ['motorway','trunk','primary','secondary','tertiary','unclassified','residential'];
+const CLS_LABEL = {
+  motorway: 'Freeways', trunk: 'Expressways', primary: 'Arterials',
+  secondary: 'Collectors', tertiary: 'Minor', unclassified: 'Unclassified', residential: 'Residential',
+};
+/* base (grey) styles by class */
+const BASE_STYLE = {
+  motorway:    { color: '#565c6e', weight: 4.5, opacity: .95 },
+  trunk:       { color: '#505564', weight: 4,   opacity: .95 },
+  primary:     { color: '#4a4f5e', weight: 3.4, opacity: .92 },
+  secondary:   { color: '#444957', weight: 2.8, opacity: .9 },
+  tertiary:    { color: '#3e434f', weight: 2.4, opacity: .85 },
+  unclassified:{ color: '#383d48', weight: 2,   opacity: .8 },
+  residential: { color: '#333742', weight: 1.7, opacity: .8 },
+};
+const EXPLORED_STYLE = { color: '#7aa2ff', opacity: 1 };
+
+const store = loadStore();
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || { e: {}, trail: [], last: null, updated: 0 }; }
+  catch { return { e: {}, trail: [], last: null, updated: 0 }; }
+}
+function saveStore() {
+  store.updated = Date.now();
+  try { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+  catch { /* full — try again without the trail */
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ e: store.e, trail: [], last: store.last, updated: store.updated })); } catch {}
+  }
+}
+
+/* ── map ────────────────────────────────────────────── */
+const map = L.map('map', { zoomSnap: .25, minZoom: 9, maxZoom: 19, zoomControl: true });
+map.createPane('paneRiver');    map.getPane('paneRiver').style.zIndex = 401;
+map.createPane('paneRoads');    map.getPane('paneRoads').style.zIndex = 402;
+map.createPane('paneExplored'); map.getPane('paneExplored').style.zIndex = 403;
+map.createPane('paneTrail');    map.getPane('paneTrail').style.zIndex = 404;
+map.createPane('panePOI');      map.getPane('panePOI').style.zIndex = 405;
+map.createPane('paneLabels');   map.getPane('paneLabels').style.zIndex = 406;
+for (const p of ['paneRiver','paneRoads','paneExplored','paneTrail','panePOI']) {
+  map.getPane(p).style.pointerEvents = 'none';
+}
+const RIVER = new L.Canvas({ pane: 'paneRiver' });
+const ROADS = new L.Canvas({ pane: 'paneRoads' });
+const EXP   = new L.Canvas({ pane: 'paneExplored' });
+const TRAIL = new L.Canvas({ pane: 'paneTrail' });
+const POIR  = new L.Canvas({ pane: 'panePOI' });
+
+let roads = null;        // { bbox, classes, ways: {cls: [{i, g}]}, lz: [{cls,id,coords,len}] }
+let wayLayers = null;    // Map wayKey -> L.Polyline
+let exploredLen = {};    // per class, metres
+let trailLine = null;
+let poiLayer = null, hoodLayer = null, riverLayer = null;
+
+const percentEl = document.getElementById('pctBig');
+const pctBar = document.getElementById('pctBar');
+const loadState = document.getElementById('loadState');
+
+function toast(msg, isErr) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isErr ? ' err' : '');
+  el.textContent = msg;
+  document.body.append(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(-8px)'; }, 2600);
+  setTimeout(() => el.remove(), 3100);
+}
+
+/* ── build layers from data ─────────────────────────── */
+async function fetchJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  return r.json();
+}
+
+function initLayers(data, label) {
+  roads = data;
+  // flatten: simplified coordinate arrays + per-way length
+  const lz = [];
+  for (const cls of CLASSES) {
+    const arr = data.ways[cls] || [];
+    for (const w of arr) {
+      const pts = w.g;
+      // light thinning: drop intermediate points <7 m from the previous one
+      const out = [pts[0]];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const [x1, y1] = out[out.length - 1], [x2, y2] = pts[i];
+        if (Math.abs(x2 - x1) * 1e5 + Math.abs(y2 - y1) * 1e5 >= 0.7) out.push(pts[i]);
+      }
+      out.push(pts[pts.length - 1]);
+      lz.push({ cls, id: w.i, coords: out, len: polyLen(out) });
+    }
+  }
+  roads.lz = lz;
+  buildMatchIndex(lz);
+
+  if (wayLayers) wayLayers.forEach(p => map.removeLayer(p));
+  wayLayers = new Map();
+  for (const w of lz) {
+    const base = Object.assign({}, BASE_STYLE[w.cls]);
+    const p = L.polyline(w.coords.map(c => [c[1], c[0]]), Object.assign(base, { renderer: ROADS, interactive: false, pane: 'paneRoads' }));
+    p.__yeg = w;
+    wayLayers.set(w.cls + ':' + w.id, p);
+    p.addTo(map);
+  }
+
+  // reflect stored exploration
+  exploredLen = {};
+  if (!store.e) store.e = {};
+  for (const cls of CLASSES) {
+    const set = new Set(store.e[cls] || []);
+    store.e[cls] = [...set];
+    exploredLen[cls] = 0;
+    const arr = (roads.ways[cls] || []);
+    const idSet = set;
+    for (const w of arr) {
+      if (idSet.has(w.i)) {
+        exploredLen[cls] += wayLen(cls + ':' + w.i);
+        applyExplored(cls, w.i, true);
+      }
+    }
+  }
+  if (label) loadState.textContent = label;
+  drawTrail();
+  renderStats();
+  updateRegionLabel();
+}
+function wayLen(key) {
+  const p = wayLayers && wayLayers.get(key);
+  return p ? p.__yeg.len : 0;
+}
+function polyLen(pts) {
+  let s = 0;
+  for (let i = 1; i < pts.length; i++) s += segLen(pts[i - 1], pts[i]);
+  return s;
+}
+const COS = Math.cos(53.5 * Math.PI / 180);
+function segLen(a, b) {
+  const dx = (b[0] - a[0]) * 111320 * COS, dy = (b[1] - a[1]) * 110540;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/* ── spatial grid for proximity matching ────────────── */
+let grid = null;
+const CELL = 0.0018; // degrees ≈ 200 m
+function buildMatchIndex(lz) {
+  grid = new Map();
+  for (let wi = 0; wi < lz.length; wi++) {
+    const w = lz[wi];
+    for (let i = 1; i < w.coords.length; i++) {
+      const a = w.coords[i - 1], b = w.coords[i];
+      const lo = (Math.min(a[0], b[0]) / CELL | 0), hi = (Math.max(a[0], b[0]) / CELL | 0);
+      const loLat = (Math.min(a[1], b[1]) / CELL | 0), hiLat = (Math.max(a[1], b[1]) / CELL | 0);
+      for (let cx = lo; cx <= hi; cx++) for (let cy = loLat; cy <= hiLat; cy++) {
+        const k = cx * 100000 + cy;
+        let bucket = grid.get(k);
+        if (!bucket) grid.set(k, bucket = []);
+        bucket.push([wi, i, a, b]);
+      }
+    }
+  }
+}
+/* distance from point (lon, lat) to segment a-b, metres — for match radius */
+function pointSegDist(px, py, a, b) {
+  const dx = (b[0] - a[0]) * 111320 * COS, dy = (b[1] - a[1]) * 110540;
+  const ex = (px - a[0]) * 111320 * COS, ey = (py - a[1]) * 110540;
+  const L2 = dx * dx + dy * dy;
+  let t = L2 ? (ex * dx + ey * dy) / L2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const ox = ex - t * dx, oy = ey - t * dy;
+  return Math.sqrt(ox * ox + oy * oy);
+}
+function matchPoint(lon, lat, radiusM) {
+  const cx = lon / CELL | 0, cy = lat / CELL | 0;
+  let newWays = 0;
+  for (let ox = -2; ox <= 2; ox++) for (let oy = -2; oy <= 2; oy++) {
+    const bucket = grid.get((cx + ox) * 100000 + (cy + oy));
+    if (!bucket) continue;
+    for (const [wi, i, a, b] of bucket) {
+      if (pointSegDist(lon, lat, a, b) > radiusM) continue;
+      const w = roads.lz[wi];
+      const set = store.e[w.cls] || (store.e[w.cls] = []);
+      if (!set.includes(w.id)) {
+        set.push(w.id);
+        exploredLen[w.cls] = (exploredLen[w.cls] || 0) + w.len;
+        applyExplored(w.cls, w.id, false);
+        newWays++;
+      }
+    }
+  }
+  return newWays;
+}
+function applyExplored(cls, id, silent) {
+  const p = wayLayers.get(cls + ':' + id);
+  if (!p) return;
+  const b = BASE_STYLE[cls];
+  p.setStyle(Object.assign({}, EXPLORED_STYLE, { weight: b.weight + 1.6, renderer: EXP, pane: 'paneExplored' }));
+  if (!silent) p.bringToFront();
+}
+
+/* ── tracking ───────────────────────────────────────── */
+let watchId = null, lastFix = null, savingTimer = null;
+const trackBtn = document.getElementById('trackBtn');
+
+function toggleTrack() {
+  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; trackBtn.classList.remove('on'); toast('Tracking paused'); return; }
+  if (!navigator.geolocation) { toast('Geolocation is not supported here', true); return; }
+  watchId = navigator.geolocation.watchPosition(onFix, onFixErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 45000 });
+  trackBtn.classList.add('on');
+  toast('Tracking — keep this screen open as you drive');
+}
+function onFix(pos) {
+  const { latitude: lat, longitude: lon, accuracy: acc } = pos.coords;
+  lastFix = { lat, lon, acc, t: Date.now() };
+  if (acc > 100) return;               // too fuzzy to trust
+  const last = store.trail[store.trail.length - 1];
+  const step = last ? segLen([last[1], last[0]], [lon, lat]) : Infinity;
+  if (step < 8) return;                // barely moved — skip
+  store.trail.push([lat, lon]);
+  if (store.trail.length > 2200) store.trail = store.trail.slice(-2000);
+  store.last = { lat, lon, t: Date.now() };
+  const newWays = matchPoint(lon, lat, Math.min(60, Math.max(24, acc * 0.9)));
+  drawTrail();
+  renderStats();
+  if (newWays > 0) { toast(`+${newWays} road${newWays > 1 ? 's' : ''} ✓`); }
+  clearTimeout(savingTimer);
+  savingTimer = setTimeout(saveStore, 2500);
+}
+function onFixErr(err) {
+  if (err && err.code === err.PERMISSION_DENIED) { toggleTrack(); toast('Location blocked — allow it in your browser settings', true); }
+  else toast('Waiting for a location fix…');
+}
+function drawTrail() {
+  if (trailLine) trailLine.remove(); trailLine = null;
+  if (!store.trail.length) return;
+  trailLine = L.polyline(store.trail.map(p => p), {
+    color: '#ffd75e', weight: 2.5, opacity: .75, renderer: TRAIL, pane: 'paneTrail', interactive: false,
+  }).addTo(map);
+}
+document.getElementById('locateBtn').addEventListener('click', () => {
+  if (lastFix) map.setView([lastFix.lat, lastFix.lon], Math.max(map.getZoom(), 15));
+  else if (!watchId) { toggleTrack(); map.once('moveend', () => {}); }
+});
+
+/* test hook — seed a fake GPS fix (used by tests; harmless in production) */
+window.__yeg = {
+  handlePosition: (lat, lon, acc = 10) => onFix({ coords: { latitude: lat, longitude: lon, accuracy: acc } }),
+  stats: () => statsSnapshot(),
+  store,
+};
+
+/* ── stats ──────────────────────────────────────────── */
+function statsSnapshot() {
+  const total = roads ? CLASSES.reduce((s, c) => s + (roads.classes[c] ? roads.classes[c].lenM : 0), 0) : 0;
+  const done = CLASSES.reduce((s, c) => s + (exploredLen[c] || 0), 0);
+  return { pct: total ? done / total * 100 : 0, done, total, perClass: CLASSES.reduce((o, c) => { o[c] = { done: exploredLen[c] || 0, total: roads && roads.classes[c] ? roads.classes[c].lenM : 0, n: roads && roads.classes[c] ? roads.classes[c].n : 0 }; return o; }, {}), ways: roads ? roads.lz.length : 0 };
+}
+function renderStats() {
+  const s = statsSnapshot();
+  percentEl.innerHTML = '';
+  percentEl.append((s.pct).toFixed(1) + '%');
+  pctBar.style.width = Math.min(100, s.pct) + '%';
+  // tiny summary for the homepage badge (avoids shipping road totals there)
+  try { localStorage.setItem('starter-page-explore-summary', JSON.stringify({ pct: +s.pct.toFixed(2), km: Math.round(s.total / 1000), touched: CLASSES.reduce((n, c) => n + (store.e && store.e[c] ? store.e[c].length : 0), 0), ways: s.ways, t: Date.now() })); } catch {}
+  const rows = document.getElementById('clsRows');
+  rows.innerHTML = '';
+  for (const cls of CLASSES) {
+    const c = s.perClass[cls];
+    if (!c || !c.total) continue;
+    const pct = c.done / c.total * 100;
+    const row = document.createElement('div'); row.className = 'cls-row';
+    row.innerHTML = `<div class="head"><span>${CLS_LABEL[cls]}</span><span class="n">${pct.toFixed(1)}% · ${(c.total / 1000).toFixed(0)} km</span></div>` +
+      `<div class="bar"><div style="width:${pct}%"></div></div>`;
+    rows.append(row);
+  }
+  const touched = store.e ? CLASSES.reduce((n, c) => n + (store.e[c] ? store.e[c].length : 0), 0) : 0;
+  const last = lastFix ? new Date(lastFix.t || Date.now()) : null;
+  document.getElementById('clsMeta').innerHTML = '';
+  const meta = document.getElementById('clsMeta');
+  meta.append(
+    el('b', null, `${touched} of ${s.ways}`), ' roads touched',
+    el(null, { br: true }),
+    s.total ? `${(s.total / 1000).toFixed(0)} km of streets mapped · ` : '',
+    store.trail.length ? `track: ${store.trail.length} points` : 'no track yet',
+    last && watchId ? ` · fixing ${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : ''
+  );
+}
+function el(tag, attrs, text) {
+  const d = document.createElement(tag || 'span');
+  if (attrs && attrs.br) { return document.createElement('br'); }
+  if (text != null) d.textContent = text;
+  return d;
+}
+document.getElementById('fitBtn').addEventListener('click', () => {
+  if (roads) map.fitBounds([[roads.bbox[1], roads.bbox[0]], [roads.bbox[3], roads.bbox[2]]]);
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('Erase all tracked roads? This cannot be undone.')) return;
+  store.e = {}; store.trail = []; saveStore();
+  location.reload();
+});
+document.getElementById('trackBtn').addEventListener('click', toggleTrack);
+document.getElementById('statsFold').addEventListener('click', () => {
+  document.getElementById('statsCard').classList.add('folded');
+  document.getElementById('statsOpen').hidden = false;
+});
+document.getElementById('statsOpen').addEventListener('click', () => {
+  document.getElementById('statsCard').classList.remove('folded');
+  document.getElementById('statsOpen').hidden = true;
+});
+function updateRegionLabel() {
+  const total = statsSnapshot().total / 1000;
+  loadState.title = total.toFixed(0) + ' km of roads loaded';
+}
+
+/* ── landmarks & extras ─────────────────────────────── */
+const POI_ICON = {
+  museum: '🏛️', art: '🎨', monument: '🗿', historic: '🏺', attraction: '📍',
+  hospital: '🏥', university: '🎓', library: '📚', market: '🛍️', stadium: '🏟️', sports: '🏒',
+};
+function renderPOIs(pois) {
+  if (poiLayer) poiLayer.remove();
+  poiLayer = L.layerGroup().addTo(map);
+  for (const p of pois) {
+    const m = L.circleMarker([p.la, p.lo], {
+      radius: 4, color: '#9db4ff', weight: 1, fillColor: '#4d70d8', fillOpacity: .9, renderer: POIR, pane: 'panePOI',
+    });
+    m.bindTooltip(`${POI_ICON[p.k] || '📍'} ${p.n}`, { direction: 'top', offset: [0, -6], className: 'poi-tip' });
+    m.bindPopup(`<b>${POI_ICON[p.k] || '📍'} ${p.n}</b><br><span style="color:#8a93a6;font-size:11px">${p.k}</span>`);
+    poiLayer.addLayer(m);
+  }
+}
+function renderRiver(segs) {
+  if (riverLayer) riverLayer.remove();
+  riverLayer = L.layerGroup().addTo(map);
+  for (const seg of segs) {
+    L.polyline(seg.map(c => c), { color: '#3b6fd4', weight: 7, opacity: .55, renderer: RIVER, pane: 'paneRiver', interactive: false }).addTo(riverLayer);
+  }
+}
+function renderHoods(hoods) {
+  if (hoodLayer) hoodLayer.remove();
+  hoodLayer = L.layerGroup();
+  for (const h of hoods) {
+    L.marker([h.la, h.lo], {
+      pane: 'paneLabels', icon: L.divIcon({
+        className: 'leaf-div', html: `<div class="hood-label">${h.n}</div>`, iconSize: null,
+      }), interactive: false,
+    }).addTo(hoodLayer);
+  }
+  const zoom = () => { if (map.hasLayer(hoodLayer) && map.getZoom() < 12) map.removeLayer(hoodLayer); else if (!map.hasLayer(hoodLayer) && map.getZoom() >= 12) hoodLayer.addTo(map); };
+  map.on('zoomend', zoom);
+  zoom();
+}
+
+/* ── boot: load central instantly, full city in background ── */
+(async function boot() {
+  try {
+    const [central, pois, extras] = await Promise.all([
+      fetchJson('data/roads-central.json'), fetchJson('data/pois.json'), fetchJson('data/extras.json'),
+    ]);
+    initLayers(central, 'central core');
+    map.fitBounds([[central.bbox[1], central.bbox[0]], [central.bbox[3], central.bbox[2]]]);
+    renderPOIs(pois.pois);
+    renderRiver(extras.river);
+    renderHoods(extras.hoods);
+    if (store.last) map.setView([store.last.lat, store.last.lon], 15, { animate: false });
+  } catch (e) {
+    loadState.textContent = 'map data failed to load';
+    console.error(e);
+  }
+  // full city arrives next; swap seamlessly if it loads
+  fetchJson('data/roads-full.json').then(full => {
+    const keep = store.e; store.e = keep;
+    initLayers(full, 'all Edmonton');
+    toast('Full city loaded — ' + roads.lz.length.toLocaleString() + ' streets');
+  }).catch(() => { loadState.textContent = 'central core (full city failed)'; });
+})();
+
+/* flush pending state when closing */
+window.addEventListener('beforeunload', saveStore);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveStore(); });
+
+/* register the service worker (inherits the starter page's PWA) */
+const secureEnough = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+if ('serviceWorker' in navigator && secureEnough) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

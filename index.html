@@ -325,6 +325,18 @@
   .todo-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--text-dim); padding: 0 4px; }
   .todo-foot button { border: none; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline; }
   .todo-foot button:hover { color: var(--danger); }
+  /* ── explore card: link to the roads explorer ─── */
+  .explore-card {
+    display: flex; flex-direction: column; gap: 6px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; backdrop-filter: blur(8px); box-shadow: var(--shadow);
+    color: var(--text); text-decoration: none; transition: background .12s, border-color .12s;
+  }
+  .explore-card:hover { background: var(--card-hover); border-color: var(--accent); }
+  .explore-card .x-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .explore-card .x-sub { font-size: 12.5px; color: var(--text-dim); }
+  .explore-card .x-pct { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .explore-card .x-go { margin-top: auto; padding-top: 10px; font-size: 12.5px; color: var(--accent); }
 
   /* ── footer ─────────────────────────────────────────── */
   footer { margin-top: 40px; text-align: center; color: var(--text-dim); font-size: 12px; }
@@ -450,6 +462,13 @@
         <button id="notesExport" title="Download as a .md file">⬇ Export .md</button>
       </div>
     </div>
+
+    <a class="explore-card explore-link" href="explore.html" title="Edmonton roads explorer">
+      <div class="section-title"><span>City</span><span style="font-size:20px">🗺️</span></div>
+      <div class="x-title">Edmonton Roads</div>
+      <div class="x-sub" id="exploreBadge">Track your drives — roads you've been on light up.</div>
+      <div class="x-go"><span class="x-pct" id="explorePct"></span><span id="exploreGo">Open the map →</span></div>
+    </a>
   </div>
 
   <div class="timetravel" id="timetravel" hidden>
@@ -462,7 +481,7 @@
   </div>
 
   <footer>
-    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>t</kbd> time travel &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
+    <kbd>/</kbd> search &nbsp; <kbd>e</kbd> edit bookmarks &nbsp; <kbd>n</kbd> notes &nbsp; <kbd>t</kbd> time travel &nbsp; <kbd>m</kbd> city map &nbsp; <kbd>s</kbd> settings &nbsp;·&nbsp;
     <button class="settings-link" id="openSettings">settings</button>
   </footer>
 </main>
@@ -1368,7 +1387,26 @@ document.addEventListener('keydown', e => {
   if (typing || dialogOpen) return;
   if (e.key === 'n') { e.preventDefault(); notesArea.focus(); }
   else if (e.key === 't') { ttToggle(); }
+  else if (e.key === 'm') { location.href = 'explore.html'; }
 });
+
+/* ── explore badge: live % from the roads explorer ─── */
+function renderExploreBadge() {
+  try {
+    const s = JSON.parse(localStorage.getItem('starter-page-explore-summary') || 'null');
+    const badge = document.getElementById('exploreBadge');
+    const pct = document.getElementById('explorePct');
+    const go = document.getElementById('exploreGo');
+    if (!badge || !pct) return;
+    if (s && s.ways) {
+      badge.textContent = `${s.km && s.km ? (s.km.toLocaleString()) + ' km of Edmonton streets' : 'Edmonton streets'} · ${s.touched || 0} touched`;
+      pct.textContent = (s.pct ? (s.pct < 10 ? s.pct.toFixed(2) : s.pct.toFixed(1)) + '% explored' : '0% explored') + '  ·  ';
+      go.textContent = 'Open the map →';
+    } else { pct.textContent = ''; go.textContent = 'Open the map →'; }
+  } catch {}
+}
+renderExploreBadge();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) renderExploreBadge(); });
 
 /* ────────────────────────── settings ────────────────────────── */
 const settingsDialog = document.getElementById('settingsDialog');
