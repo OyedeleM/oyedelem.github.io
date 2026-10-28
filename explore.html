@@ -97,24 +97,22 @@
 
   /* street-name labels along roads */
   .st-label {
-    color: #cdd4e2; font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    color: #cdd4e2; font-size: 9.5px; font-weight: 600; letter-spacing: .3px;
     text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7);
-    white-space: nowrap; position: absolute; pointer-events: none; padding: 1px 4px;
+    white-space: nowrap; position: absolute; pointer-events: none; padding: 0 2px;
     transform: translate(-50%, -50%) rotate(var(--rot, 0rad));
   }
   .st-label.exp { color: #9dbaff; }
 
-  /* POI chips */
+  /* POI markers — small icon-only dots; the name shows in the popup on click */
   .poi-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(13,18,32,.9); border: 1px solid rgba(127,142,200,.5); border-radius: 999px;
-    color: #e6e9f2; font-size: 11px; padding: 2px 8px 2px 5px; white-space: nowrap;
-    text-shadow: 0 1px 2px rgba(0,0,0,.8); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; font-size: 12px; line-height: 1;
+    background: rgba(13,18,32,.92); border: 1px solid rgba(127,142,200,.55); border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,.6); cursor: pointer;
+    text-shadow: 0 1px 2px rgba(0,0,0,.8);
   }
-  .poi-chip:hover { border-color: var(--accent); }
-  /* at mid zoom they collapse to icon-only pins so they don't overlap */
-  .panePOI.compact .poi-chip { padding: 2px; font-size: 0; gap: 0; }
-  .panePOI.compact .poi-chip .nm { display: none; }
+  .poi-chip:hover { border-color: var(--accent); scale: 1.15; }
 
   /* live "now on" street readout */
   .now-street {
@@ -715,16 +713,19 @@ function refreshStreetLabels() {
   }
   cands.sort((a, b2) => BASE_STYLE[b2.w.cls].weight - BASE_STYLE[a.w.cls].weight);
   for (const c of cands) {
+    const p1 = map.latLngToContainerPoint([c.y1, c.x1]);
+    const p2 = map.latLngToContainerPoint([c.y2, c.x2]);
+    /* skip short segments — only label roads long enough to read on screen */
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 60) continue;
     const mx = (c.x1 + c.x2) / 2, my = (c.y1 + c.y2) / 2;
     let clear = true;
     const px = map.latLngToContainerPoint([my, mx]);
     for (const q of placedAt) {
-      if (Math.abs(q.x - px.x) < 85 && Math.abs(q.y - px.y) < 15) { clear = false; break; }
+      /* generous exclusion box keeps labels well separated */
+      if (Math.abs(q.x - px.x) < 130 && Math.abs(q.y - px.y) < 30) { clear = false; break; }
     }
     if (!clear) continue;
     placedAt.push({ x: px.x, y: px.y });
-    const p1 = map.latLngToContainerPoint([c.y1, c.x1]);
-    const p2 = map.latLngToContainerPoint([c.y2, c.x2]);
     let rot = Math.atan2(p2.y - p1.y, p2.x - p1.x);
     if (rot > Math.PI / 2 || rot < -Math.PI / 2) rot += Math.PI;   // never upside-down
     const isExp = !!(prog.e[c.w.cls] && prog.e[c.w.cls].includes(c.w.id));
@@ -734,7 +735,7 @@ function refreshStreetLabels() {
     div.style.setProperty('--rot', rot + 'rad');
     L.marker([my, mx], { pane: 'paneLabels', icon: L.divIcon({ className: 'leaf-div', html: div.outerHTML, iconSize: null }), interactive: false })
       .addTo(streetLabelLayer);
-    if (seen.length > 199) break;
+    if (seen.length > 120) break;
     seen.push(div);
   }
 }
@@ -866,16 +867,14 @@ function renderPOIs(pois) {
   for (const p of pois) {
     const el = document.createElement('div');
     el.className = 'poi-chip';
-    el.innerHTML = (POI_ICON[p.k] || '📍') + ' <span class="nm">' + esc(p.n) + '</span>';
+    el.textContent = POI_ICON[p.k] || '📍';
     const m = L.marker([p.la, p.lo], { pane: 'panePOI', icon: L.divIcon({ className: 'leaf-div', html: el.outerHTML, iconSize: null }) });
     m.bindPopup(`<b>${(POI_ICON[p.k] || '📍')} ${esc(p.n)}</b><br><span style="color:#8a93a6;font-size:11px">${esc(p.k)}</span>`);
     poiLayer.addLayer(m);
   }
-  /* chips get crowded at city-wide zoom — show them once you're close in,
-     and collapse names to icon-only pins until you're really zoomed in */
+  /* icon pins appear from mid zoom so the whole city isn't dotted */
   const zoomGate = () => {
     const z = map.getZoom();
-    map.getPane('panePOI').classList.toggle('compact', z < 14.5);
     if (map.hasLayer(poiLayer) && z < 12.5) map.removeLayer(poiLayer);
     else if (!map.hasLayer(poiLayer) && z >= 12.5) poiLayer.addTo(map);
   };
