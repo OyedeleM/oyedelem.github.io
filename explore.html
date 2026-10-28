@@ -764,6 +764,7 @@ const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.osm.ch/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
 ];
 
 async function ovQuery(queryText, onStatus) {
@@ -836,9 +837,23 @@ async function cityFromResult(c, onStatus) {
   }
   status(`downloading ${c.name} (${wayCount.toLocaleString()} streets${estMB ? ', ~' + estMB + ' MB' : ''})…`);
   const t0 = Date.now();
-  const [rawRoads, rawPois, rawExtras] = await Promise.all([
-    ovQuery(roadsQ, status), ovQuery(poisQ, status), ovQuery(extrasQ, status),
-  ]);
+  /* Overpass sometimes answers 200 with an empty elements array (it rate-limits
+     the heavy street query instead of erroring). An empty set for a real city
+     is always wrong here — retry, then surface it. */
+  let rawRoads = null, rawPois = null, rawExtras = null;
+  for (let roadsTry = 0; ; roadsTry++) {
+    const [rr, rp, re] = await Promise.all([
+      ovQuery(roadsQ, status),
+      rawPois ? Promise.resolve(rawPois) : ovQuery(poisQ, status),
+      rawExtras ? Promise.resolve(rawExtras) : ovQuery(extrasQ, status),
+    ]);
+    rawPois = rawPois || rp; rawExtras = rawExtras || re;
+    const nRoads = (rr.elements || []).filter(e => e.type === 'way' && e.tags && e.tags.highway).length;
+    if (nRoads > 0) { rawRoads = rr; break; }
+    if (roadsTry >= 3) throw new Error('\'OpenStreetMap\' returned no street data — its servers are likely under load. Try again in a few minutes.');
+    status(`the street data came back empty (servers busy) — retrying, ${3 - roadsTry} tries left…`);
+    await new Promise(res => setTimeout(res, 6000 + roadsTry * 9000));
+  }
   const rd = packRoads(rawRoads);
   const pois = packPOIs(rawPois);
   const ex = packExtras(rawExtras);

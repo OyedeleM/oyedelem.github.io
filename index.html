@@ -787,12 +787,14 @@ if (window.ResizeObserver) {
 /* ────────────────────────── time travel ────────────────────────── */
 /* A hidden preview mode: scrubs the clock+sky through the day without
    touching real state. Press 't' to toggle. */
-let ttMin = null; // null = real time
+let ttMin = null; // null = real time; minutes of the day in the shown (location) timezone
 function ttDate() {
-  if (ttMin === null) return new Date();
-  const d = new Date();
-  d.setHours(Math.floor(ttMin / 60), ttMin % 60); // keep real seconds ticking
-  return d;
+  const base = new Date();
+  if (ttMin === null) return base;
+  const tz = locTz();
+  if (!tz) { const d = new Date(); d.setHours(Math.floor(ttMin / 60), ttMin % 60); return d; }
+  const p = zonedParts(base);  // "today" as seen at the location
+  return zonedInstantFromWall(p.y, p.mo, p.d, Math.floor(ttMin / 60), ttMin % 60, base.getSeconds(), tz);
 }
 const ttPanel = document.getElementById('timetravel');
 const ttSlider = document.getElementById('ttSlider');
@@ -908,12 +910,46 @@ function wxAdvice() {
   if (code === 2 || code === 3) return 'Cloudy but fine ☁️';
   return '';
 }
+/* The clock shows the weather location's local time: when you pin a city in
+   settings (or the geo-detect picks one up), greeting, date and sky follow
+   that place — not the machine you're sitting at. Falls back to device time. */
+function locTz() { return (state.weatherLoc && state.weatherLoc.tz) || null; }
+function zonedParts(date) {
+  const tz = locTz();
+  if (!tz) return null;
+  try {
+    const p = {};
+    for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', weekday: 'short',
+    }).formatToParts(date)) p[type] = value;
+    const hr = parseInt(p.hour, 10) % 24;
+    return { y: +p.year, mo: +p.month, d: +p.day, dow: p.weekday, h: hr, m: +p.minute, s: +p.second };
+  } catch { return null; }
+}
+/* wall clock in a zone → real instant (two-pass; handles DST edges) */
+function zoneOffsetMs(date, tz) {
+  const p = {};
+  for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date)) p[type] = value;
+  return Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second) - (date.getTime() - date.getMilliseconds());
+}
+function zonedInstantFromWall(y, mo, d, h, mi, s, tz) {
+  const guess = Date.UTC(y, mo - 1, d, h, mi, s);
+  let inst = guess - zoneOffsetMs(new Date(guess), tz);
+  return new Date(guess - zoneOffsetMs(new Date(inst), tz));
+}
+
 function tick() {
   const now = ttDate(); // respects time-travel scrubbing
-  document.documentElement.dataset.tod = timeOfDay(now.getHours());
-  const hh = state.clock24 ? now.getHours() : ((now.getHours() % 12) || 12);
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
+  const zt = zonedParts(now);
+  const h = zt ? zt.h : now.getHours(), mi = zt ? zt.m : now.getMinutes(), sec = zt ? zt.s : now.getSeconds();
+  document.documentElement.dataset.tod = timeOfDay(h);
+  const hh = state.clock24 ? h : ((h % 12) || 12);
+  const mm = String(mi).padStart(2, '0');
+  const ss = String(sec).padStart(2, '0');
   clockEl.innerHTML = '';
   clockEl.append(
     String(hh).padStart(2, '0') + ':' + mm,
@@ -922,8 +958,13 @@ function tick() {
   const name = state.name ? ', ' + state.name : '';
   dateLine.innerHTML = '';
   const g = document.createElement('span'); g.className = 'greet';
-  g.textContent = greeting(now.getHours()) + name + ' — ';
-  dateLine.append(g, now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
+  g.textContent = greeting(h) + name + ' — ';
+  const tz = locTz();
+  let dateText;
+  try {
+    dateText = new Intl.DateTimeFormat(undefined, tz ? { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' } : { weekday: 'long', month: 'long', day: 'numeric' }).format(now);
+  } catch { dateText = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }); }
+  dateLine.append(g, dateText);
   const advice = wxAdvice();
   if (advice) {
     const a = document.createElement('span');
@@ -935,10 +976,12 @@ function tick() {
 }
 let lastCelestialMin = -1;
 const _tick = tick;
-tick = function() {  // extend tick: rebuild the sky once a minute
+tick = function() {  // extend tick: rebuild the sky once a minute (of shown time)
   _tick();
-  const now = new Date();
-  const m = now.getHours() * 60 + now.getMinutes();
+  const zt = zonedParts(new Date()) || {};
+  const h = zt.h != null ? zt.h : new Date().getHours();
+  const m2 = zt.m != null ? zt.m : new Date().getMinutes();
+  const m = h * 60 + m2;
   if (m !== lastCelestialMin) { lastCelestialMin = m; renderCelestial(); }
 };
 setInterval(() => tick(), 1000);
@@ -982,10 +1025,11 @@ function requestLocation() {
       const d = await r.json();
       city = [d.city || d.locality, d.countryName].filter(Boolean).join(', ') || city;
     } catch {}
-    state.weatherLoc = { lat, lon, city };
+    state.weatherLoc = { lat, lon, city, tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
     locDenied = false;
     save();
     fetchWeather();
+    tick();
   }, err => {
     weatherEl.classList.remove('loading');
     locDenied = true;
@@ -1007,6 +1051,7 @@ async function fetchWeather() {
       `&forecast_days=3&timezone=auto`;
     const r = await fetch(u);
     const d = await r.json();
+    if (d.timezone && state.weatherLoc.tz !== d.timezone) { state.weatherLoc.tz = d.timezone; save(); }
     const [icon, desc] = WMO(d.current.weather_code);
     weatherEl.querySelector('.w-main').textContent =
       `${icon} ${Math.round(d.current.temperature_2m)}°  H:${Math.round(d.daily.temperature_2m_max[0])}° L:${Math.round(d.daily.temperature_2m_min[0])}°`;
@@ -1450,8 +1495,9 @@ document.getElementById('setCityBtn').addEventListener('click', async () => {
     const d = await r.json();
     if (!d.results || !d.results.length) { setCityStatus.textContent = 'City not found.'; return; }
     const c = d.results[0];
-    state.weatherLoc = { lat: c.latitude, lon: c.longitude, city: c.name + (c.country ? ', ' + c.country : '') };
+    state.weatherLoc = { lat: c.latitude, lon: c.longitude, city: c.name + (c.country ? ', ' + c.country : ''), tz: c.timezone || null };
     save(); setCityStatus.textContent = '📍 ' + state.weatherLoc.city; fetchWeather();
+    tick(); // clock switches to the new city's time right away
   } catch { setCityStatus.textContent = 'Lookup failed — check your connection.'; }
 });
 
@@ -1467,8 +1513,8 @@ document.getElementById('setLocateBtn').addEventListener('click', () => {
       const d = await r.json();
       city = [d.city || d.locality, d.countryName].filter(Boolean).join(', ') || city;
     } catch {}
-    state.weatherLoc = { lat, lon, city };
-    save(); setCityStatus.textContent = '📍 ' + city; fetchWeather();
+    state.weatherLoc = { lat, lon, city, tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+    save(); setCityStatus.textContent = '📍 ' + city; fetchWeather(); tick();
   }, () => { setCityStatus.textContent = 'Location denied — search for a city instead.'; });
 });
 
