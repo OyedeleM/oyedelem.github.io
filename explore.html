@@ -131,6 +131,16 @@
     transition: opacity .35s;
   }
   .done-street .x { color: var(--text-dim); cursor: pointer; margin-left: 8px; font-size: 13px; }
+  /* wake-lock active indicator */
+  .wake-chip {
+    position: fixed; right: 14px; bottom: 14px; z-index: 940;
+    display: flex; align-items: center; gap: 5px;
+    border: 1px solid rgba(157,186,255,.4); background: rgba(11,14,26,.88);
+    color: var(--text-dim); border-radius: 999px; padding: 6px 11px; font-size: 11px;
+    box-shadow: var(--shadow); backdrop-filter: blur(10px);
+  }
+  .wake-chip[hidden] { display: none; }
+  @media (max-width: 720px) { .wake-chip { right: 10px; top: 58px; bottom: auto; } }
   @media (max-width: 720px) {
     .now-street { bottom: calc(40vh + 26px); }
     .done-street { bottom: calc(40vh + 66px); }
@@ -436,6 +446,13 @@ nowBtn.addEventListener('click', ev => {
 });
 /* on each GPS fix: name the street we're on; if it's one we already lit,
    offer a chip that zooms to it */
+/** small persistent pill shown while the wake lock is actually holding the screen */
+const wakeChip = document.createElement('div');
+wakeChip.className = 'wake-chip';
+wakeChip.hidden = true;
+wakeChip.innerHTML = '<span class="ico">🔆</span> screen awake';
+document.body.append(wakeChip);
+function updateWakeIndicator() { wakeChip.hidden = !wakeLock; }
 function pickStreet(lon, lat) {
   if (!roads || !grid) return;
   const k = nearestStreet(lon, lat, 80);
@@ -743,12 +760,31 @@ map.on('zoomend moveend', refreshStreetLabels);
 let watchId = null, lastFix = null;
 const trackBtn = document.getElementById('trackBtn');
 
+/* screen wake lock: keeps the display (and with it, GPS polling) alive while
+   tracking. Browsers auto-release it when the page is hidden, so we re-request
+   on visibility regain. Silent no-op where the API is missing (older Safari, iOS < 16.4). */
+let wakeLock = null;
+async function requestWake() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; updateWakeIndicator(); });
+      updateWakeIndicator();
+    }
+  } catch { /* user or OS denied — tracking still works, screen may dim */ }
+}
+function dropWake() { try { wakeLock?.release?.(); } catch {} wakeLock = null; updateWakeIndicator(); }
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && watchId && !wakeLock) requestWake();
+});
+
 function toggleTrack() {
-  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; trackBtn.classList.remove('on'); nowStreet.hidden = true; nowBtn.hidden = true; currentStreet = { key: '', name: '', explored: false }; toast('Tracking paused'); return; }
+  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; dropWake(); trackBtn.classList.remove('on'); nowStreet.hidden = true; nowBtn.hidden = true; currentStreet = { key: '', name: '', explored: false }; toast('Tracking paused'); return; }
   if (!navigator.geolocation) { toast('Geolocation is not supported here', true); return; }
   watchId = navigator.geolocation.watchPosition(onFix, onFixErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 45000 });
+  requestWake();
   trackBtn.classList.add('on');
-  toast('Tracking — keep this screen open as you drive');
+  toast('Tracking on — screen will stay awake while you drive');
 }
 function onFix(pos) {
   const { latitude: lat, longitude: lon, accuracy: acc } = pos.coords;

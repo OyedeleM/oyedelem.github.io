@@ -1,5 +1,5 @@
 /* Starter page service worker: offline-first app shell, network-first weather. */
-const VERSION = 'v8';
+const VERSION = 'v9';
 const SHELL_CACHE = `shell-${VERSION}`;
 const WX_CACHE = `weather-${VERSION}`;
 const SHELL_ASSETS = [
@@ -35,14 +35,20 @@ self.addEventListener('fetch', e => {
 const CLEAN_URL = new URL(url.pathname, self.location.origin).href;
 
   // page navigations: network-first so users always get the latest version
-  // (cache only kicks in offline); fresh copy refreshes the cache
+  // (cache only kicks in offline); fresh copy refreshes the cache.
+  // Offline fallback: exact page first, then the same page ignoring query
+  // strings, then the precached shell index — a stale/uncached URL still
+  // resolves to a usable app instead of a browser offline error.
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request).then(res => {
         const copy = res.clone();
         caches.open(SHELL_CACHE).then(c => c.put(CLEAN_URL, copy));
         return res;
-      }).catch(() => caches.match(CLEAN_URL))
+      }).catch(() =>
+        caches.match(CLEAN_URL, { ignoreSearch: true })
+          .then(hit => hit || caches.match('./index.html'))
+      )
     );
     return;
   }
