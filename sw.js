@@ -1,5 +1,5 @@
 /* Starter page service worker: offline-first app shell, network-first weather. */
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL_CACHE = `shell-${VERSION}`;
 const WX_CACHE = `weather-${VERSION}`;
 const SHELL_ASSETS = [
